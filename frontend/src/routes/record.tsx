@@ -1,0 +1,562 @@
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { useEffect, useState, useRef } from "react";
+import { Mic, Square, Zap, Languages, Copy, Check, Download, RotateCcw, X, Pause, Play } from "lucide-react";
+import { Document, Packer, Paragraph, TextRun } from "docx";
+import { useAuth } from "@/context/AuthContext";
+import hachiLogo from "@/assets/hachi-logo.png";
+
+const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3001";
+
+const SPARKLES = [
+  { top: "6%",  left: "8%",  delay: 0,   size: "h-1.5 w-1.5" },
+  { top: "14%", left: "80%", delay: 0.8, size: "h-1 w-1"     },
+  { top: "30%", left: "3%",  delay: 1.3, size: "h-2 w-2"     },
+  { top: "48%", left: "95%", delay: 0.4, size: "h-1 w-1"     },
+  { top: "62%", left: "4%",  delay: 1.7, size: "h-1 w-1"     },
+  { top: "75%", left: "88%", delay: 0.9, size: "h-1.5 w-1.5" },
+  { top: "88%", left: "15%", delay: 1.5, size: "h-1 w-1"     },
+  { top: "93%", left: "70%", delay: 0.2, size: "h-2 w-2"     },
+  { top: "4%",  left: "50%", delay: 1.0, size: "h-1 w-1"     },
+  { top: "55%", left: "48%", delay: 0.5, size: "h-1 w-1"     },
+];
+
+interface Word {
+  text: string;
+  start: number; // milliseconds
+  end: number;   // milliseconds
+}
+
+type RecordStatus = "idle" | "requesting" | "recording" | "paused" | "recorded" | "processing" | "done" | "error";
+
+export const Route = createFileRoute("/record")({
+  component: RecordPage,
+});
+
+function formatTime(seconds: number) {
+  const m = Math.floor(seconds / 60).toString().padStart(2, "0");
+  const s = (seconds % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+function RecordPage() {
+  const { user, isLoading, token } = useAuth();
+  const navigate = useNavigate();
+
+  const [status, setStatus]               = useState<RecordStatus>("idle");
+  const [recordTime, setRecordTime]       = useState(0);
+  const [transcription, setTranscription] = useState("");
+  const [duration, setDuration]           = useState<number | null>(null);
+  const [error, setError]                 = useState("");
+  const [copied, setCopied]               = useState(false);
+  const [audioUrl, setAudioUrl]           = useState<string | null>(null);
+  const [audioMime, setAudioMime]         = useState("audio/webm");
+  const [speakerLabels, setSpeakerLabels] = useState(false);
+  const [words, setWords]                 = useState<Word[]>([]);
+
+  const mediaRecorderRef  = useRef<MediaRecorder | null>(null);
+  const chunksRef         = useRef<Blob[]>([]);
+  const timerRef          = useRef<ReturnType<typeof setInterval> | null>(null);
+  const streamRef         = useRef<MediaStream | null>(null);
+  const audioUrlRef       = useRef<string | null>(null);
+  const recordedBlobRef   = useRef<Blob | null>(null);
+  const recordedMimeRef   = useRef<string>("audio/webm");
+  const audioRef          = useRef<HTMLAudioElement>(null);
+  // Direct DOM refs — no state update → cursor never resets during editing
+  const editRef           = useRef<HTMLDivElement>(null);
+  const spanRefs          = useRef<HTMLSpanElement[]>([]);
+  const activeIdxRef      = useRef(-1);
+
+  useEffect(() => {
+    if (!isLoading && !user) void navigate({ to: "/login", search: { error: undefined, from: undefined } });
+  }, [user, isLoading, navigate]);
+
+  // Build word spans in the contentEditable div when words arrive
+  useEffect(() => {
+    const div = editRef.current;
+    if (!div) return;
+    div.innerHTML = "";
+    spanRefs.current = [];
+    activeIdxRef.current = -1;
+    if (words.length === 0) return;
+    words.forEach((w, i) => {
+      const span = document.createElement("span");
+      span.className = "cursor-pointer rounded px-0.5 transition-colors duration-100 hover:bg-primary/15";
+      span.textContent = w.text;
+      span.onclick = () => {
+        if (audioRef.current) {
+          audioRef.current.currentTime = w.start / 1000;
+          void audioRef.current.play();
+        }
+      };
+      div.appendChild(span);
+      if (i < words.length - 1) div.appendChild(document.createTextNode(" "));
+      spanRefs.current.push(span);
+    });
+  }, [words]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+    };
+  }, []);
+
+  // Direct DOM highlight — no React state → cursor never jumps
+  function handleTimeUpdate() {
+    if (!audioRef.current || spanRefs.current.length === 0) return;
+    const ms = audioRef.current.currentTime * 1000;
+    let newIdx = -1;
+    for (let i = 0; i < words.length; i++) {
+      if (words[i].start <= ms) newIdx = i;
+      else break;
+    }
+    if (newIdx === activeIdxRef.current) return;
+    const prev = spanRefs.current[activeIdxRef.current];
+    if (prev) {
+      prev.classList.remove("bg-primary", "text-primary-foreground", "font-medium");
+      prev.classList.add("hover:bg-primary/15");
+    }
+    const cur = spanRefs.current[newIdx];
+    if (cur) {
+      cur.classList.add("bg-primary", "text-primary-foreground", "font-medium");
+      cur.classList.remove("hover:bg-primary/15");
+      cur.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+    activeIdxRef.current = newIdx;
+  }
+
+  function startTimer() {
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => setRecordTime((t) => t + 1), 1000);
+  }
+
+  function stopTimer() {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  }
+
+  async function startRecording() {
+    setStatus("requesting"); setError("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current  = stream;
+      chunksRef.current  = [];
+
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : "audio/webm";
+
+      const recorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      recorder.onstop = () => onRecordStop(mimeType);
+
+      recorder.start(250);
+      setStatus("recording");
+      setRecordTime(0);
+      startTimer();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Không thể truy cập microphone";
+      setError(msg.includes("Permission") || msg.includes("denied")
+        ? "Trình duyệt chưa cấp quyền microphone. Vui lòng cho phép quyền truy cập."
+        : `Lỗi microphone: ${msg}`);
+      setStatus("error");
+    }
+  }
+
+  function stopRecording() {
+    stopTimer();
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+  }
+
+  function pauseRecording() {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state !== "recording") return;
+    recorder.pause();
+    stopTimer();
+    setStatus("paused");
+  }
+
+  function resumeRecording() {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state !== "paused") return;
+    recorder.resume();
+    startTimer();
+    setStatus("recording");
+  }
+
+  function onRecordStop(mimeType: string) {
+    const blob = new Blob(chunksRef.current, { type: mimeType });
+    if (blob.size === 0) { setError("Không có âm thanh nào được ghi."); setStatus("error"); return; }
+
+    recordedBlobRef.current = blob;
+    recordedMimeRef.current = mimeType;
+
+    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+    const url = URL.createObjectURL(blob);
+    audioUrlRef.current = url;
+    setAudioUrl(url);
+    setAudioMime(mimeType);
+    setStatus("recorded");
+  }
+
+  async function startTranscription() {
+    const blob = recordedBlobRef.current;
+    if (!blob) return;
+
+    setStatus("processing");
+    const formData = new FormData();
+    formData.append("audio", blob, "recording.webm");
+    formData.append("speakerLabels", String(speakerLabels));
+    try {
+      const res  = await fetch(`${API_URL}/api/transcribe`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const data = (await res.json()) as { text?: string; duration?: number; error?: string; words?: Word[] };
+      if (!res.ok) { setError(data.error ?? "Chuyển đổi thất bại"); setStatus("error"); return; }
+      setTranscription(data.text ?? "");
+      setDuration(data.duration ?? null);
+      setWords(data.words ?? []);
+      setStatus("done");
+    } catch {
+      setError("Không thể kết nối đến server"); setStatus("error");
+    }
+  }
+
+  async function handleCopy() {
+    const text = editRef.current?.textContent ?? transcription;
+    await navigator.clipboard.writeText(text);
+    setCopied(true); setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function handleDownload() {
+    const text = editRef.current?.textContent ?? transcription;
+    const doc = new Document({
+      sections: [{
+        children: text.split("\n").map((line) =>
+          new Paragraph({ children: [new TextRun(line)] })
+        ),
+      }],
+    });
+    const blob = await Packer.toBlob(doc);
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href = url; a.download = "recording.docx"; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleDownloadAudio() {
+    if (!audioUrl) return;
+    const ext = audioMime.includes("webm") ? "webm" : "ogg";
+    const a = document.createElement("a");
+    a.href = audioUrl; a.download = `recording.${ext}`; a.click();
+  }
+
+  function reset() {
+    if (audioUrlRef.current) { URL.revokeObjectURL(audioUrlRef.current); audioUrlRef.current = null; }
+    recordedBlobRef.current = null;
+    setAudioUrl(null);
+    setWords([]);
+    if (editRef.current) editRef.current.innerHTML = "";
+    spanRefs.current = [];
+    activeIdxRef.current = -1;
+    setStatus("idle"); setRecordTime(0); setTranscription(""); setError(""); setDuration(null);
+  }
+
+  if (isLoading) return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <span className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+    </div>
+  );
+  if (!user) return null;
+
+  return (
+    <div className="relative min-h-screen bg-background overflow-x-hidden">
+
+      {/* Nền */}
+      <div className="absolute inset-0 bg-gradient-hero pointer-events-none" />
+      <div className="absolute top-[8%]  left-[4%]   h-80 w-80 rounded-full bg-primary/15 blur-3xl animate-float pointer-events-none" />
+      <div className="absolute bottom-[6%] right-[4%] h-64 w-64 rounded-full bg-primary/10 blur-3xl animate-float pointer-events-none" style={{ animationDelay: "1.5s" }} />
+      {SPARKLES.map((s, i) => (
+        <span key={i} className={`absolute ${s.size} rounded-full bg-primary animate-twinkle pointer-events-none`}
+          style={{ top: s.top, left: s.left, animationDelay: `${s.delay}s` }} />
+      ))}
+
+      {/* Header */}
+      <header className="relative z-20 border-b border-border bg-background/70 backdrop-blur-md">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
+          <Link to="/dashboard" search={{ token: undefined }} className="flex items-center">
+            <img src={hachiLogo} alt="Hachi" className="h-14 w-auto object-contain" />
+          </Link>
+          <Link to="/dashboard" search={{ token: undefined }}
+            className="text-sm text-muted-foreground hover:text-foreground transition">
+            ← Quay về trang chủ
+          </Link>
+        </div>
+      </header>
+
+      {/* Main */}
+      <main className="relative z-10 mx-auto max-w-5xl px-6 py-10">
+
+        {/* Heading */}
+        <div className="mb-8 text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-xs font-medium text-primary mb-4">
+            <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+            Ghi âm trực tiếp
+          </div>
+          <h1 className="text-4xl font-bold text-foreground">
+            Ghi âm <span className="font-display text-primary text-5xl">giọng nói</span>
+          </h1>
+          <p className="mt-2 text-muted-foreground">Nói trực tiếp vào microphone, Hachi chuyển đổi thành văn bản tức thì.</p>
+        </div>
+
+        {/* Record card */}
+        <div className={`relative overflow-hidden rounded-3xl border bg-card p-8 transition-all duration-300
+          ${status === "done" ? "border-primary/50 shadow-glow" : "border-border"}`}>
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent pointer-events-none" />
+
+          {/* Header row */}
+          <div className="relative flex items-center justify-between mb-8">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/15 border border-primary/20">
+                <Mic className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-foreground">Ghi âm giọng nói</h2>
+                <p className="text-xs text-muted-foreground flex items-center gap-2">
+                  <Languages className="h-3 w-3" /> Tự động nhận diện ngôn ngữ · 50+ ngôn ngữ
+                </p>
+              </div>
+            </div>
+            {(status === "done" || status === "error" || status === "recorded") && (
+              <button onClick={reset}
+                className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-card transition">
+                <RotateCcw className="h-3 w-3" /> Ghi âm lại
+              </button>
+            )}
+          </div>
+
+          {/* ── idle ── */}
+          {status === "idle" && (
+            <div className="flex flex-col items-center gap-6 py-8">
+              <button onClick={() => void startRecording()}
+                className="group relative flex h-32 w-32 items-center justify-center rounded-full bg-gradient-primary shadow-glow hover:opacity-90 transition-all hover:scale-105">
+                <span className="absolute inset-0 rounded-full border-2 border-primary/30 animate-pulse-ring" />
+                <span className="absolute inset-0 rounded-full border-2 border-primary/20 animate-pulse-ring" style={{ animationDelay: "0.8s" }} />
+                <Mic className="h-14 w-14 text-primary-foreground" />
+              </button>
+              <div className="text-center">
+                <p className="text-lg font-semibold text-foreground">Nhấn để bắt đầu ghi âm</p>
+                <p className="text-sm text-muted-foreground mt-1">Microphone sẽ được kích hoạt khi bạn nhấn nút</p>
+              </div>
+              <div className="flex items-center gap-6 text-sm text-muted-foreground">
+                <span className="flex items-center gap-1.5"><Zap className="h-4 w-4 text-primary" />Xử lý ~3 giây</span>
+                <span className="flex items-center gap-1.5"><Languages className="h-4 w-4 text-primary" />50+ ngôn ngữ</span>
+              </div>
+            </div>
+          )}
+
+          {/* ── requesting permission ── */}
+          {status === "requesting" && (
+            <div className="flex flex-col items-center gap-4 py-8">
+              <span className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+              <p className="text-muted-foreground text-sm">Đang yêu cầu quyền microphone...</p>
+            </div>
+          )}
+
+          {/* ── recording ── */}
+          {(status === "recording" || status === "paused") && (
+            <div className="flex flex-col items-center gap-6 py-8">
+              <div className="relative flex h-32 w-32 items-center justify-center">
+                <span className="absolute inset-0 rounded-full bg-destructive/20 animate-pulse" />
+                <span className="absolute inset-[-12px] rounded-full border-2 border-destructive/30 animate-pulse-ring" />
+                <span className="absolute inset-[-24px] rounded-full border border-destructive/15 animate-pulse-ring" style={{ animationDelay: "0.8s" }} />
+                <div className="relative flex h-24 w-24 items-center justify-center rounded-full bg-destructive/80 shadow-lg">
+                  <Mic className="h-12 w-12 text-white" />
+                </div>
+              </div>
+              <div className="text-center">
+                <p className="text-4xl font-mono font-bold text-foreground tabular-nums">{formatTime(recordTime)}</p>
+                <div className="flex items-center justify-center gap-2 mt-1">
+                  <span className="h-2 w-2 rounded-full bg-destructive animate-pulse" />
+                  <span className="text-sm text-destructive font-medium">Đang ghi âm</span>
+                </div>
+              </div>
+              <div className="flex items-end gap-1 h-10">
+                {Array.from({ length: 20 }).map((_, i) => (
+                  <span key={i} className="w-1.5 rounded-full bg-primary/70 animate-wave"
+                    style={{ height: "100%", animationDelay: `${i * 0.08}s` }} />
+                ))}
+              </div>
+              {status === "recording" ? (
+                <button onClick={pauseRecording}
+                  className="flex items-center gap-2 rounded-full border border-border bg-background/60 px-6 py-3 text-sm font-semibold text-foreground hover:bg-card transition">
+                  <Pause className="h-4 w-4" />
+                  Tạm dừng
+                </button>
+              ) : (
+                <button onClick={resumeRecording}
+                  className="flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-6 py-3 text-sm font-semibold text-primary hover:bg-primary/20 transition">
+                  <Play className="h-4 w-4 fill-primary" />
+                  Tiếp tục
+                </button>
+              )}
+              <button onClick={stopRecording}
+                className="flex items-center gap-2 rounded-full border border-destructive/40 bg-destructive/10 px-6 py-3 text-sm font-semibold text-destructive hover:bg-destructive/20 transition">
+                <Square className="h-4 w-4 fill-destructive" />
+                Dừng ghi âm
+              </button>
+            </div>
+          )}
+
+          {/* ── recorded ── */}
+          {status === "recorded" && (
+            <div className="flex flex-col gap-5 py-2">
+              <div className="flex items-center gap-2 text-sm">
+                <Check className="h-4 w-4 text-primary" />
+                <span className="text-primary font-medium">Ghi âm hoàn tất</span>
+                <span className="text-muted-foreground">· {formatTime(recordTime)}</span>
+              </div>
+              {audioUrl && (
+                <div className="rounded-2xl border border-border bg-background/60 p-4">
+                  <p className="text-xs text-muted-foreground mb-3 flex items-center gap-1.5">
+                    <Mic className="h-3 w-3" /> Nghe lại bản ghi âm
+                  </p>
+                  <audio controls src={audioUrl} className="w-full" />
+                </div>
+              )}
+              <label className="flex items-center justify-between rounded-2xl border border-border bg-background/50 px-4 py-3 cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Gắn nhãn người nói</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Phân biệt và đánh dấu từng người trong đoạn ghi âm</p>
+                </div>
+                <div className={`relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200 ${speakerLabels ? "bg-primary" : "bg-muted"}`}>
+                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 ${speakerLabels ? "translate-x-5" : "translate-x-0.5"}`} />
+                  <input type="checkbox" className="sr-only" checked={speakerLabels} onChange={(e) => setSpeakerLabels(e.target.checked)} />
+                </div>
+              </label>
+              <div className="flex gap-3">
+                <button onClick={handleDownloadAudio}
+                  className="flex-1 flex items-center justify-center gap-2 rounded-full border border-border py-3 text-sm font-medium hover:bg-primary/10 hover:border-primary/40 hover:text-primary transition">
+                  <Download className="h-4 w-4" /> Tải audio
+                </button>
+                <button onClick={() => void startTranscription()}
+                  className="flex-1 flex items-center justify-center gap-2 rounded-full bg-gradient-primary py-3 text-sm font-semibold text-primary-foreground shadow-glow hover:opacity-90 transition">
+                  <Zap className="h-4 w-4" /> Bắt đầu chuyển đổi
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── processing ── */}
+          {status === "processing" && (
+            <div className="flex flex-col items-center gap-5 py-8">
+              <div className="relative flex h-20 w-20 items-center justify-center">
+                <span className="absolute inset-0 rounded-full border-2 border-primary/20 animate-pulse-ring" />
+                <span className="h-12 w-12 rounded-full border-[3px] border-primary/30 border-t-primary animate-spin" />
+              </div>
+              <div className="text-center">
+                <p className="text-lg font-semibold text-foreground">Đang xử lý âm thanh...</p>
+                <p className="text-sm text-muted-foreground mt-1">Hachi đang chuyển đổi giọng nói của bạn</p>
+              </div>
+              <div className="flex items-end gap-1.5 h-8">
+                {Array.from({ length: 13 }).map((_, i) => (
+                  <span key={i} className="w-1.5 rounded-full bg-primary/60 animate-wave"
+                    style={{ height: "100%", animationDelay: `${i * 0.1}s` }} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── error ── */}
+          {status === "error" && (
+            <div className="flex flex-col gap-4 py-4">
+              <div className="flex items-start gap-3 rounded-2xl bg-destructive/10 border border-destructive/20 p-4">
+                <X className="h-5 w-5 text-destructive mt-0.5 shrink-0" />
+                <p className="text-sm text-destructive">{error}</p>
+              </div>
+              <button onClick={reset}
+                className="w-full flex items-center justify-center gap-2 rounded-full border border-border py-3 text-sm font-medium hover:bg-card transition">
+                <RotateCcw className="h-4 w-4" /> Thử lại
+              </button>
+            </div>
+          )}
+
+          {/* ── done ── */}
+          {status === "done" && (
+            <div className="flex flex-col gap-5">
+              {/* Status */}
+              <div className="flex items-center gap-2 text-sm">
+                <Check className="h-4 w-4 text-primary" />
+                <span className="text-primary font-medium">Chuyển đổi thành công</span>
+                {duration && <span className="text-muted-foreground">· {Math.round(duration)}s âm thanh</span>}
+                <span className="text-muted-foreground">· {formatTime(recordTime)} ghi âm</span>
+              </div>
+
+              {/* Audio player */}
+              {audioUrl && (
+                <div className="rounded-2xl border border-border bg-background/60 p-4">
+                  <p className="text-xs text-muted-foreground mb-3 flex items-center gap-1.5">
+                    <Mic className="h-3 w-3" />
+                    Nghe lại — từ đang phát sẽ được highlight, nhấn vào từ để tua
+                  </p>
+                  <audio ref={audioRef} controls src={audioUrl} className="w-full" onTimeUpdate={handleTimeUpdate} />
+                </div>
+              )}
+
+              {/* contentEditable — highlight + edit in one view */}
+              {words.length > 0 ? (
+                <div className="rounded-2xl border border-border bg-background/60 px-5 py-4">
+                  <p className="text-xs text-muted-foreground mb-2">Văn bản — có thể chỉnh sửa trực tiếp</p>
+                  <div
+                    ref={editRef}
+                    contentEditable
+                    suppressContentEditableWarning
+                    onInput={() => {
+                      if (editRef.current)
+                        setTranscription(editRef.current.textContent ?? "");
+                    }}
+                    className="max-h-64 overflow-y-auto outline-none text-sm text-foreground leading-[2.2] whitespace-pre-wrap min-h-[6rem]"
+                  />
+                </div>
+              ) : (
+                <textarea value={transcription} rows={8}
+                  onChange={(e) => setTranscription(e.target.value)}
+                  className="w-full resize-y rounded-2xl border border-border bg-background/60 px-5 py-4 text-sm text-foreground leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/40"
+                />
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-3">
+                <button onClick={() => void handleCopy()}
+                  className="flex-1 flex items-center justify-center gap-2 rounded-full border border-border py-3 text-sm font-medium hover:bg-primary/10 hover:border-primary/40 hover:text-primary transition">
+                  {copied ? <Check className="h-4 w-4 text-primary" /> : <Copy className="h-4 w-4" />}
+                  {copied ? "Đã sao chép" : "Sao chép"}
+                </button>
+                <button onClick={handleDownloadAudio}
+                  className="flex-1 flex items-center justify-center gap-2 rounded-full border border-primary/40 bg-primary/10 py-3 text-sm font-semibold text-primary hover:bg-primary/20 transition">
+                  <Download className="h-4 w-4" />
+                  Tải audio
+                </button>
+                <button onClick={() => void handleDownload()}
+                  className="flex-1 flex items-center justify-center gap-2 rounded-full bg-gradient-primary py-3 text-sm font-semibold text-primary-foreground shadow-glow hover:opacity-90 transition">
+                  <Download className="h-4 w-4" />
+                  Tải .docx
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}
