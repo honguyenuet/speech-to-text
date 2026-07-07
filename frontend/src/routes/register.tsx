@@ -114,7 +114,7 @@ function RegisterPage() {
   }
 
   return (
-    <div className="relative min-h-screen bg-background overflow-hidden flex items-center justify-center px-4 py-10">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-8 sm:py-10">
 
       {/* ── Nền động ──────────────────────────────────────────────────── */}
       <div className="absolute inset-0 bg-gradient-hero pointer-events-none" />
@@ -130,21 +130,21 @@ function RegisterPage() {
       ))}
 
       {/* ── Layout 2 cột ─────────────────────────────────────────────── */}
-      <div className="relative z-10 w-full max-w-5xl grid lg:grid-cols-2 gap-10 items-center">
+      <div className="relative z-10 grid w-full max-w-5xl items-center gap-8 lg:grid-cols-2 lg:gap-10">
 
         {/* ══ CỘT TRÁI — Branding ══════════════════════════════════════ */}
         <div className="flex flex-col items-center lg:items-start text-center lg:text-left">
 
           {/* Logo + vòng pulse */}
-          <div className="relative flex h-48 w-48 items-center justify-center mb-8">
+          <div className="relative mb-5 flex h-36 w-36 items-center justify-center sm:mb-8 sm:h-48 sm:w-48">
             <span className="absolute inset-0 rounded-full border border-primary/40 animate-pulse-ring" />
             <span className="absolute inset-0 rounded-full border border-primary/25 animate-pulse-ring" style={{ animationDelay: "0.8s" }} />
             <span className="absolute inset-0 rounded-full border border-primary/12 animate-pulse-ring" style={{ animationDelay: "1.6s" }} />
-            <div className="absolute inset-8 rounded-full bg-primary/10" />
+            <div className="absolute inset-5 rounded-full bg-primary/10 sm:inset-8" />
             <img
               src={hachiLogo}
               alt="Hachi"
-              className="relative h-36 w-auto object-contain animate-float drop-shadow-[0_8px_32px_rgba(250,200,60,0.5)]"
+              className="relative h-24 w-auto animate-float object-contain drop-shadow-[0_8px_32px_rgba(250,200,60,0.5)] sm:h-36"
             />
           </div>
 
@@ -154,20 +154,20 @@ function RegisterPage() {
             Chào mừng đến với Hachi
           </div>
 
-          <h1 className="text-4xl font-bold text-foreground leading-tight md:text-5xl">
+          <h1 className="text-3xl font-bold leading-tight text-foreground sm:text-4xl md:text-5xl">
             Bắt đầu hành trình{" "}
-            <span className="font-display text-primary text-5xl md:text-6xl block mt-1">
+            <span className="mt-1 block font-display text-4xl text-primary sm:text-5xl md:text-6xl">
               cùng Hachi!
             </span>
           </h1>
 
-          <p className="mt-4 text-muted-foreground text-base max-w-sm">
+          <p className="mt-4 max-w-sm text-sm text-muted-foreground sm:text-base">
             Tạo tài khoản miễn phí và trải nghiệm công nghệ chuyển giọng nói
             thành văn bản chính xác hàng đầu Việt Nam.
           </p>
 
           {/* Feature list */}
-          <ul className="mt-7 space-y-3">
+          <ul className="mt-5 space-y-3 sm:mt-7">
             {FEATURES.map((f) => (
               <li key={f.text} className="flex items-center gap-3">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/15 border border-primary/20">
@@ -206,7 +206,7 @@ function RegisterPage() {
 
         {/* ══ CỘT PHẢI — Form ══════════════════════════════════════════ */}
         <div className="w-full">
-          <div className="rounded-3xl border border-border bg-card/80 backdrop-blur-sm p-7 shadow-soft">
+          <div className="rounded-2xl border border-border bg-card/80 p-5 shadow-soft backdrop-blur-sm sm:rounded-3xl sm:p-7">
 
             {/* Header form */}
             <div className="mb-6">
@@ -237,7 +237,7 @@ function RegisterPage() {
             <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
 
               {/* First + Last name */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <div>
                   <label className="block text-xs font-medium text-muted-foreground mb-1.5">
                     Tên <span className="text-destructive">*</span>

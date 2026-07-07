@@ -63,9 +63,9 @@ function Landing() {
     <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
       {/* Nav */}
       <header className="relative z-20">
-        <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
+        <nav className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-4 sm:px-6 sm:py-5">
           <a href="/" className="flex items-center gap-2">
-            <img src={hachiLogo} alt="Hachi" className="h-20 w-auto object-contain" />
+            <img src={hachiLogo} alt="Hachi" className="h-14 w-auto object-contain sm:h-20" />
           </a>
           <div className="hidden items-center gap-8 md:flex text-sm text-muted-foreground">
             <a href="#features" className="hover:text-foreground transition">Tính năng</a>
@@ -74,7 +74,7 @@ function Landing() {
           </div>
           <button
             onClick={requireAuth}
-            className="rounded-full bg-gradient-primary px-5 py-2 text-sm font-semibold text-primary-foreground shadow-glow hover:opacity-90 transition"
+            className="whitespace-nowrap rounded-full bg-gradient-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-glow transition hover:opacity-90 sm:px-5 sm:text-sm"
           >
             Bắt đầu miễn phí
           </button>
@@ -84,29 +84,29 @@ function Landing() {
       {/* Hero */}
       <section className="relative">
         <div className="absolute inset-0 bg-gradient-hero pointer-events-none" />
-        <div className="relative mx-auto grid max-w-7xl gap-12 px-6 pt-12 pb-24 lg:grid-cols-2 lg:items-center lg:pt-20">
+        <div className="relative mx-auto grid max-w-7xl gap-10 px-4 pb-16 pt-8 sm:px-6 sm:pb-24 sm:pt-12 lg:grid-cols-2 lg:items-center lg:pt-20">
           {/* Left */}
           <div className="relative z-10">
             <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-xs font-medium text-primary">
               <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
               Mô hình AI mới — chính xác 98%
             </div>
-            <h1 className="mt-6 text-5xl font-bold leading-[1.05] tracking-tight md:text-6xl lg:text-7xl">
+            <h1 className="mt-6 text-4xl font-bold leading-[1.08] tracking-tight sm:text-5xl md:text-6xl lg:text-7xl">
               Chuẩn từng âm, <br />
-              <span className="font-display text-primary text-5xl md:text-6xl lg:text-7xl">
+              <span className="font-display text-primary text-4xl sm:text-5xl md:text-6xl lg:text-7xl">
                 trọn từng lời.
               </span>
             </h1>
-            <p className="mt-6 max-w-lg text-lg text-muted-foreground">
+            <p className="mt-5 max-w-lg text-base text-muted-foreground sm:mt-6 sm:text-lg">
               Hachi chuyển giọng nói thành văn bản chính xác trong vài giây. Hỗ
               trợ tiếng Việt, tiếng Anh và hơn 50 ngôn ngữ khác — sẵn sàng cho
               podcast, họp, phỏng vấn và ghi chú nhanh.
             </p>
 
-            <div className="mt-8 flex flex-wrap items-center gap-4">
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
               <button
                 onClick={requireAuth}
-                className="group inline-flex items-center gap-2 rounded-full bg-gradient-primary px-7 py-3.5 text-base font-semibold text-primary-foreground shadow-glow hover:opacity-95 transition"
+                className="group inline-flex w-full items-center justify-center gap-2 rounded-full bg-gradient-primary px-7 py-3.5 text-base font-semibold text-primary-foreground shadow-glow transition hover:opacity-95 sm:w-auto"
               >
                 <Mic className="h-5 w-5" />
                 Ghi âm ngay
@@ -114,13 +114,13 @@ function Landing() {
               </button>
               <button
                 onClick={requireAuth}
-                className="inline-flex items-center gap-2 rounded-full border border-border bg-card/50 px-7 py-3.5 text-base font-semibold text-foreground hover:bg-card transition"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-border bg-card/50 px-7 py-3.5 text-base font-semibold text-foreground transition hover:bg-card sm:w-auto"
               >
                 Tải file âm thanh
               </button>
             </div>
 
-            <div className="mt-10 flex items-center gap-8 text-sm text-muted-foreground">
+            <div className="mt-8 flex items-center justify-between gap-4 text-center text-sm text-muted-foreground sm:mt-10 sm:justify-start sm:gap-8 sm:text-left">
               <div>
                 <div className="text-2xl font-bold text-foreground">50+</div>
                 <div>Ngôn ngữ</div>
@@ -145,7 +145,7 @@ function Landing() {
             </div>
 
             {/* Logo orbit */}
-            <div className="relative mx-auto flex h-96 w-96 items-center justify-center">
+            <div className="relative mx-auto flex h-72 w-72 items-center justify-center sm:h-96 sm:w-96">
               <span className="absolute h-full w-full rounded-full border border-primary/30 animate-pulse-ring" />
               <span
                 className="absolute h-full w-full rounded-full border border-primary/20 animate-pulse-ring"
@@ -158,12 +158,12 @@ function Landing() {
               <img
                 src={hachiLogo}
                 alt="Hachi logo"
-                className="relative h-80 w-80 object-contain drop-shadow-[0_10px_40px_rgba(250,200,60,0.5)]"
+                className="relative h-60 w-60 object-contain drop-shadow-[0_10px_40px_rgba(250,200,60,0.5)] sm:h-80 sm:w-80"
               />
             </div>
 
             {/* Transcript card */}
-            <div className="relative mx-auto mt-6 max-w-md rounded-2xl border border-border bg-card p-5 shadow-soft">
+            <div className="relative mx-auto mt-6 max-w-md rounded-2xl border border-border bg-card p-4 shadow-soft sm:p-5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15 text-primary">
@@ -199,7 +199,7 @@ function Landing() {
 
       {/* Feature strip */}
       <section id="features" className="border-t border-border bg-card/30">
-        <div className="mx-auto grid max-w-7xl gap-8 px-6 py-16 md:grid-cols-3">
+        <div className="mx-auto grid max-w-7xl gap-5 px-4 py-12 sm:px-6 sm:py-16 md:grid-cols-3 md:gap-8">
           {[
             {
               icon: Zap,
@@ -233,15 +233,15 @@ function Landing() {
 
       {/* How to use */}
       <section id="how" className="border-t border-border">
-        <div className="mx-auto max-w-7xl px-6 py-20">
+        <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-20">
 
-          <div className="mb-14 text-center">
+          <div className="mb-10 text-center sm:mb-14">
             <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-xs font-medium text-primary mb-4">
               <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
               Đơn giản — chỉ 4 bước
             </div>
-            <h2 className="text-4xl font-bold text-foreground">
-              Cách <span className="font-display text-primary text-5xl">sử dụng</span>
+            <h2 className="text-3xl font-bold text-foreground sm:text-4xl">
+              Cách <span className="font-display text-primary text-4xl sm:text-5xl">sử dụng</span>
             </h2>
             <p className="mt-3 text-muted-foreground">Từ lần đầu đăng ký đến bản văn bản hoàn chỉnh, chỉ mất chưa đầy một phút.</p>
           </div>
@@ -301,7 +301,7 @@ function Landing() {
           <div className="mt-14 flex justify-center">
             <button
               onClick={requireAuth}
-              className="group inline-flex items-center gap-2 rounded-full bg-gradient-primary px-8 py-4 text-base font-semibold text-primary-foreground shadow-glow hover:opacity-90 transition"
+              className="group inline-flex w-full items-center justify-center gap-2 rounded-full bg-gradient-primary px-8 py-4 text-base font-semibold text-primary-foreground shadow-glow transition hover:opacity-90 sm:w-auto"
             >
               <Mic className="h-5 w-5" />
               Thử ngay miễn phí
@@ -313,7 +313,7 @@ function Landing() {
 
       {/* Footer */}
       <footer className="border-t border-border bg-card/20">
-        <div className="mx-auto max-w-7xl px-6 py-10 flex flex-col md:flex-row items-center justify-between gap-6 text-sm text-muted-foreground">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-6 px-4 py-10 text-sm text-muted-foreground sm:px-6 md:flex-row">
 
           {/* Logo + copyright */}
           <div className="flex flex-col items-center md:items-start gap-1">

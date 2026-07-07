@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import hachiLogo from "@/assets/hachi-logo.png";
 
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3001";
+const MAX_RECORD_SECONDS = 30 * 60; // 30 phút
 
 const SPARKLES = [
   { top: "6%",  left: "8%",  delay: 0,   size: "h-1.5 w-1.5" },
@@ -26,6 +27,19 @@ interface Word {
   end: number;   // milliseconds
 }
 
+interface TranscriptionQuota {
+  plan: "free" | "payg" | "plus" | "pro" | "pre";
+  billingCycle: "monthly" | "yearly" | null;
+  freeTranscriptionSeconds: number;
+  usedTranscriptionSeconds: number;
+  paygSecondsRemaining: number;
+  dailyTranscriptionSeconds: number;
+  dailyQuotaSeconds: number | null;
+  usageAlertRequired: boolean;
+  usageAlertDailySeconds: number;
+  remainingTranscriptionSeconds: number | null;
+}
+
 type RecordStatus = "idle" | "requesting" | "recording" | "paused" | "recorded" | "processing" | "done" | "error";
 
 export const Route = createFileRoute("/record")({
@@ -39,7 +53,7 @@ function formatTime(seconds: number) {
 }
 
 function RecordPage() {
-  const { user, isLoading, token } = useAuth();
+  const { user, isLoading, token, updateUser } = useAuth();
   const navigate = useNavigate();
 
   const [status, setStatus]               = useState<RecordStatus>("idle");
@@ -51,11 +65,13 @@ function RecordPage() {
   const [audioUrl, setAudioUrl]           = useState<string | null>(null);
   const [audioMime, setAudioMime]         = useState("audio/webm");
   const [speakerLabels, setSpeakerLabels] = useState(false);
+  const [recordNotice, setRecordNotice]   = useState("");
   const [words, setWords]                 = useState<Word[]>([]);
 
   const mediaRecorderRef  = useRef<MediaRecorder | null>(null);
   const chunksRef         = useRef<Blob[]>([]);
   const timerRef          = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordTimeRef     = useRef(0);
   const streamRef         = useRef<MediaStream | null>(null);
   const audioUrlRef       = useRef<string | null>(null);
   const recordedBlobRef   = useRef<Blob | null>(null);
@@ -129,7 +145,17 @@ function RecordPage() {
 
   function startTimer() {
     if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => setRecordTime((t) => t + 1), 1000);
+    timerRef.current = setInterval(() => {
+      const nextTime = recordTimeRef.current + 1;
+      recordTimeRef.current = nextTime;
+      setRecordTime(nextTime);
+
+      if (nextTime >= MAX_RECORD_SECONDS) {
+        setRecordTime(MAX_RECORD_SECONDS);
+        recordTimeRef.current = MAX_RECORD_SECONDS;
+        stopRecording(true);
+      }
+    }, 1000);
   }
 
   function stopTimer() {
@@ -140,7 +166,7 @@ function RecordPage() {
   }
 
   async function startRecording() {
-    setStatus("requesting"); setError("");
+    setStatus("requesting"); setError(""); setRecordNotice("");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current  = stream;
@@ -158,6 +184,7 @@ function RecordPage() {
 
       recorder.start(250);
       setStatus("recording");
+      recordTimeRef.current = 0;
       setRecordTime(0);
       startTimer();
     } catch (err: unknown) {
@@ -169,7 +196,10 @@ function RecordPage() {
     }
   }
 
-  function stopRecording() {
+  function stopRecording(hitLimit?: unknown) {
+    if (hitLimit === true) {
+      setRecordNotice(`Bản ghi đã tự động dừng vì đạt giới hạn ${formatTime(MAX_RECORD_SECONDS)}.`);
+    }
     stopTimer();
     const recorder = mediaRecorderRef.current;
     if (recorder && recorder.state !== "inactive") recorder.stop();
@@ -221,11 +251,12 @@ function RecordPage() {
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
-      const data = (await res.json()) as { text?: string; duration?: number; error?: string; words?: Word[] };
+      const data = (await res.json()) as { text?: string; duration?: number; error?: string; words?: Word[]; quota?: TranscriptionQuota };
       if (!res.ok) { setError(data.error ?? "Chuyển đổi thất bại"); setStatus("error"); return; }
       setTranscription(data.text ?? "");
       setDuration(data.duration ?? null);
       setWords(data.words ?? []);
+      if (data.quota) updateUser(data.quota);
       setStatus("done");
     } catch {
       setError("Không thể kết nối đến server"); setStatus("error");
@@ -264,12 +295,13 @@ function RecordPage() {
   function reset() {
     if (audioUrlRef.current) { URL.revokeObjectURL(audioUrlRef.current); audioUrlRef.current = null; }
     recordedBlobRef.current = null;
+    recordTimeRef.current = 0;
     setAudioUrl(null);
     setWords([]);
     if (editRef.current) editRef.current.innerHTML = "";
     spanRefs.current = [];
     activeIdxRef.current = -1;
-    setStatus("idle"); setRecordTime(0); setTranscription(""); setError(""); setDuration(null);
+    setStatus("idle"); setRecordTime(0); setTranscription(""); setError(""); setRecordNotice(""); setDuration(null);
   }
 
   if (isLoading) return (
@@ -293,45 +325,45 @@ function RecordPage() {
 
       {/* Header */}
       <header className="relative z-20 border-b border-border bg-background/70 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <Link to="/dashboard" search={{ token: undefined }} className="flex items-center">
-            <img src={hachiLogo} alt="Hachi" className="h-14 w-auto object-contain" />
+            <img src={hachiLogo} alt="Hachi" className="h-11 w-auto object-contain sm:h-14" />
           </Link>
           <Link to="/dashboard" search={{ token: undefined }}
-            className="text-sm text-muted-foreground hover:text-foreground transition">
+            className="whitespace-nowrap text-xs text-muted-foreground transition hover:text-foreground sm:text-sm">
             ← Quay về trang chủ
           </Link>
         </div>
       </header>
 
       {/* Main */}
-      <main className="relative z-10 mx-auto max-w-5xl px-6 py-10">
+      <main className="relative z-10 mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
 
         {/* Heading */}
-        <div className="mb-8 text-center">
+        <div className="mb-6 text-center sm:mb-8">
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-xs font-medium text-primary mb-4">
             <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
             Ghi âm trực tiếp
           </div>
-          <h1 className="text-4xl font-bold text-foreground">
-            Ghi âm <span className="font-display text-primary text-5xl">giọng nói</span>
+          <h1 className="text-3xl font-bold text-foreground sm:text-4xl">
+            Ghi âm <span className="font-display text-primary text-4xl sm:text-5xl">giọng nói</span>
           </h1>
           <p className="mt-2 text-muted-foreground">Nói trực tiếp vào microphone, Hachi chuyển đổi thành văn bản tức thì.</p>
         </div>
 
         {/* Record card */}
-        <div className={`relative overflow-hidden rounded-3xl border bg-card p-8 transition-all duration-300
+        <div className={`relative overflow-hidden rounded-2xl border bg-card p-5 transition-all duration-300 sm:rounded-3xl sm:p-8
           ${status === "done" ? "border-primary/50 shadow-glow" : "border-border"}`}>
           <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent pointer-events-none" />
 
           {/* Header row */}
-          <div className="relative flex items-center justify-between mb-8">
+          <div className="relative mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/15 border border-primary/20">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-primary/20 bg-primary/15 sm:h-12 sm:w-12">
                 <Mic className="h-6 w-6 text-primary" />
               </div>
               <div>
-                <h2 className="text-xl font-bold text-foreground">Ghi âm giọng nói</h2>
+                <h2 className="text-lg font-bold text-foreground sm:text-xl">Ghi âm giọng nói</h2>
                 <p className="text-xs text-muted-foreground flex items-center gap-2">
                   <Languages className="h-3 w-3" /> Tự động nhận diện ngôn ngữ · 50+ ngôn ngữ
                 </p>
@@ -347,18 +379,18 @@ function RecordPage() {
 
           {/* ── idle ── */}
           {status === "idle" && (
-            <div className="flex flex-col items-center gap-6 py-8">
+            <div className="flex flex-col items-center gap-6 py-6 sm:py-8">
               <button onClick={() => void startRecording()}
-                className="group relative flex h-32 w-32 items-center justify-center rounded-full bg-gradient-primary shadow-glow hover:opacity-90 transition-all hover:scale-105">
+                className="group relative flex h-28 w-28 items-center justify-center rounded-full bg-gradient-primary shadow-glow transition-all hover:scale-105 hover:opacity-90 sm:h-32 sm:w-32">
                 <span className="absolute inset-0 rounded-full border-2 border-primary/30 animate-pulse-ring" />
                 <span className="absolute inset-0 rounded-full border-2 border-primary/20 animate-pulse-ring" style={{ animationDelay: "0.8s" }} />
-                <Mic className="h-14 w-14 text-primary-foreground" />
+                <Mic className="h-12 w-12 text-primary-foreground sm:h-14 sm:w-14" />
               </button>
               <div className="text-center">
                 <p className="text-lg font-semibold text-foreground">Nhấn để bắt đầu ghi âm</p>
                 <p className="text-sm text-muted-foreground mt-1">Microphone sẽ được kích hoạt khi bạn nhấn nút</p>
               </div>
-              <div className="flex items-center gap-6 text-sm text-muted-foreground">
+              <div className="flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:items-center sm:gap-6">
                 <span className="flex items-center gap-1.5"><Zap className="h-4 w-4 text-primary" />Xử lý ~3 giây</span>
                 <span className="flex items-center gap-1.5"><Languages className="h-4 w-4 text-primary" />50+ ngôn ngữ</span>
               </div>
@@ -376,22 +408,22 @@ function RecordPage() {
           {/* ── recording ── */}
           {(status === "recording" || status === "paused") && (
             <div className="flex flex-col items-center gap-6 py-8">
-              <div className="relative flex h-32 w-32 items-center justify-center">
+              <div className="relative flex h-28 w-28 items-center justify-center sm:h-32 sm:w-32">
                 <span className="absolute inset-0 rounded-full bg-destructive/20 animate-pulse" />
                 <span className="absolute inset-[-12px] rounded-full border-2 border-destructive/30 animate-pulse-ring" />
                 <span className="absolute inset-[-24px] rounded-full border border-destructive/15 animate-pulse-ring" style={{ animationDelay: "0.8s" }} />
-                <div className="relative flex h-24 w-24 items-center justify-center rounded-full bg-destructive/80 shadow-lg">
-                  <Mic className="h-12 w-12 text-white" />
+                <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-destructive/80 shadow-lg sm:h-24 sm:w-24">
+                  <Mic className="h-10 w-10 text-white sm:h-12 sm:w-12" />
                 </div>
               </div>
               <div className="text-center">
-                <p className="text-4xl font-mono font-bold text-foreground tabular-nums">{formatTime(recordTime)}</p>
+                <p className="font-mono text-3xl font-bold tabular-nums text-foreground sm:text-4xl">{formatTime(recordTime)}</p>
                 <div className="flex items-center justify-center gap-2 mt-1">
                   <span className="h-2 w-2 rounded-full bg-destructive animate-pulse" />
                   <span className="text-sm text-destructive font-medium">Đang ghi âm</span>
                 </div>
               </div>
-              <div className="flex items-end gap-1 h-10">
+              <div className="flex h-10 max-w-full items-end gap-1 overflow-hidden">
                 {Array.from({ length: 20 }).map((_, i) => (
                   <span key={i} className="w-1.5 rounded-full bg-primary/70 animate-wave"
                     style={{ height: "100%", animationDelay: `${i * 0.08}s` }} />
@@ -426,6 +458,11 @@ function RecordPage() {
                 <span className="text-primary font-medium">Ghi âm hoàn tất</span>
                 <span className="text-muted-foreground">· {formatTime(recordTime)}</span>
               </div>
+              {recordNotice && (
+                <div className="rounded-2xl border border-primary/25 bg-primary/10 px-4 py-3 text-sm text-primary">
+                  {recordNotice}
+                </div>
+              )}
               {audioUrl && (
                 <div className="rounded-2xl border border-border bg-background/60 p-4">
                   <p className="text-xs text-muted-foreground mb-3 flex items-center gap-1.5">
@@ -434,7 +471,7 @@ function RecordPage() {
                   <audio controls src={audioUrl} className="w-full" />
                 </div>
               )}
-              <label className="flex items-center justify-between rounded-2xl border border-border bg-background/50 px-4 py-3 cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition">
+              <label className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-border bg-background/50 px-4 py-3 transition hover:border-primary/40 hover:bg-primary/5">
                 <div>
                   <p className="text-sm font-medium text-foreground">Gắn nhãn người nói</p>
                   <p className="text-xs text-muted-foreground mt-0.5">Phân biệt và đánh dấu từng người trong đoạn ghi âm</p>
@@ -444,7 +481,7 @@ function RecordPage() {
                   <input type="checkbox" className="sr-only" checked={speakerLabels} onChange={(e) => setSpeakerLabels(e.target.checked)} />
                 </div>
               </label>
-              <div className="flex gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row">
                 <button onClick={handleDownloadAudio}
                   className="flex-1 flex items-center justify-center gap-2 rounded-full border border-border py-3 text-sm font-medium hover:bg-primary/10 hover:border-primary/40 hover:text-primary transition">
                   <Download className="h-4 w-4" /> Tải audio
@@ -495,7 +532,7 @@ function RecordPage() {
           {status === "done" && (
             <div className="flex flex-col gap-5">
               {/* Status */}
-              <div className="flex items-center gap-2 text-sm">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
                 <Check className="h-4 w-4 text-primary" />
                 <span className="text-primary font-medium">Chuyển đổi thành công</span>
                 {duration && <span className="text-muted-foreground">· {Math.round(duration)}s âm thanh</span>}
@@ -536,7 +573,7 @@ function RecordPage() {
               )}
 
               {/* Actions */}
-              <div className="flex gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row">
                 <button onClick={() => void handleCopy()}
                   className="flex-1 flex items-center justify-center gap-2 rounded-full border border-border py-3 text-sm font-medium hover:bg-primary/10 hover:border-primary/40 hover:text-primary transition">
                   {copied ? <Check className="h-4 w-4 text-primary" /> : <Copy className="h-4 w-4" />}

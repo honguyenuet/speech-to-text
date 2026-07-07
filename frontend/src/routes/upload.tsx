@@ -25,12 +25,25 @@ const SPARKLES = [
 
 interface Word { text: string; start: number; end: number; }
 
+interface TranscriptionQuota {
+  plan: "free" | "payg" | "plus" | "pro" | "pre";
+  billingCycle: "monthly" | "yearly" | null;
+  freeTranscriptionSeconds: number;
+  usedTranscriptionSeconds: number;
+  paygSecondsRemaining: number;
+  dailyTranscriptionSeconds: number;
+  dailyQuotaSeconds: number | null;
+  usageAlertRequired: boolean;
+  usageAlertDailySeconds: number;
+  remainingTranscriptionSeconds: number | null;
+}
+
 export const Route = createFileRoute("/upload")({
   component: UploadPage,
 });
 
 function UploadPage() {
-  const { user, isLoading, token } = useAuth();
+  const { user, isLoading, token, updateUser } = useAuth();
   const navigate = useNavigate();
 
   const [uploadFile, setUploadFile]       = useState<File | null>(null);
@@ -141,11 +154,12 @@ function UploadPage() {
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
-      const data = (await res.json()) as { text?: string; duration?: number; error?: string; words?: Word[] };
+      const data = (await res.json()) as { text?: string; duration?: number; error?: string; words?: Word[]; quota?: TranscriptionQuota };
       if (!res.ok) { setUploadError(data.error ?? "Chuyển đổi thất bại"); setUploadStatus("error"); return; }
       setTranscription(data.text ?? "");
       setDuration(data.duration ?? null);
       setWords(data.words ?? []);
+      if (data.quota) updateUser(data.quota);
       if (audioUrl) URL.revokeObjectURL(audioUrl);
       setAudioUrl(URL.createObjectURL(uploadFile));
       setUploadStatus("done");
@@ -203,12 +217,12 @@ function UploadPage() {
       ))}
 
       <header className="relative z-20 border-b border-border bg-background/70 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <Link to="/dashboard" search={{ token: undefined }} className="flex items-center">
-            <img src={hachiLogo} alt="Hachi" className="h-14 w-auto object-contain" />
+            <img src={hachiLogo} alt="Hachi" className="h-11 w-auto object-contain sm:h-14" />
           </Link>
           <Link to="/dashboard" search={{ token: undefined }}
-            className="text-sm text-muted-foreground hover:text-foreground transition flex items-center gap-1">
+            className="flex items-center gap-1 whitespace-nowrap text-xs text-muted-foreground transition hover:text-foreground sm:text-sm">
             ← Quay về trang chủ
           </Link>
         </div>
@@ -220,29 +234,29 @@ function UploadPage() {
         onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); }}
       />
 
-      <main className="relative z-10 mx-auto max-w-5xl px-6 py-10">
-        <div className="mb-8 text-center">
+      <main className="relative z-10 mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
+        <div className="mb-6 text-center sm:mb-8">
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-xs font-medium text-primary mb-4">
             <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
             Chuyển đổi âm thanh
           </div>
-          <h1 className="text-4xl font-bold text-foreground">
-            Tải file <span className="font-display text-primary text-5xl">âm thanh</span>
+          <h1 className="text-3xl font-bold text-foreground sm:text-4xl">
+            Tải file <span className="font-display text-primary text-4xl sm:text-5xl">âm thanh</span>
           </h1>
           <p className="mt-2 text-muted-foreground">Upload file ghi âm, Hachi chuyển thành văn bản chính xác trong vài giây.</p>
         </div>
 
-        <div className={`relative overflow-hidden rounded-3xl border bg-card p-8 transition-all duration-300
+        <div className={`relative overflow-hidden rounded-2xl border bg-card p-5 transition-all duration-300 sm:rounded-3xl sm:p-8
           ${uploadStatus === "done" ? "border-primary/50 shadow-glow" : "border-border"}`}>
           <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent pointer-events-none" />
 
-          <div className="relative flex items-center justify-between mb-6">
+          <div className="relative mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/15 border border-primary/20">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-primary/20 bg-primary/15 sm:h-12 sm:w-12">
                 <Upload className="h-6 w-6 text-primary animate-float" />
               </div>
               <div>
-                <h2 className="text-xl font-bold text-foreground">Tải file âm thanh</h2>
+                <h2 className="text-lg font-bold text-foreground sm:text-xl">Tải file âm thanh</h2>
                 <p className="text-xs text-muted-foreground">MP3, WAV, M4A, OGG, FLAC, AAC · Tối đa {MAX_MB}MB</p>
               </div>
             </div>
@@ -262,7 +276,7 @@ function UploadPage() {
                 onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={handleDrop}
-                className={`relative mb-6 rounded-2xl border-2 border-dashed cursor-pointer p-12 text-center transition-all
+                className={`relative mb-6 cursor-pointer rounded-2xl border-2 border-dashed p-8 text-center transition-all sm:p-12
                   ${isDragging ? "border-primary bg-primary/10" : "border-border bg-background/50 hover:border-primary/50 hover:bg-primary/5"}`}
               >
                 <div className="flex flex-col items-center gap-3 pointer-events-none">
@@ -283,7 +297,7 @@ function UploadPage() {
                   <span key={fmt} className="rounded-full border border-border bg-secondary/50 px-3 py-1 text-xs font-medium text-muted-foreground">{fmt}</span>
                 ))}
               </div>
-              <div className="flex items-center gap-6 text-sm text-muted-foreground">
+              <div className="flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:items-center sm:gap-6">
                 <span className="flex items-center gap-1.5"><Zap className="h-4 w-4 text-primary" />Xử lý ~3 giây</span>
                 <span className="flex items-center gap-1.5"><Languages className="h-4 w-4 text-primary" />Nhận diện tự động 50+ ngôn ngữ</span>
               </div>
@@ -308,7 +322,7 @@ function UploadPage() {
               {uploadError && (
                 <p className="rounded-xl bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">{uploadError}</p>
               )}
-              <label className="flex items-center justify-between rounded-2xl border border-border bg-background/50 px-4 py-3 cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition">
+              <label className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-border bg-background/50 px-4 py-3 transition hover:border-primary/40 hover:bg-primary/5">
                 <div>
                   <p className="text-sm font-medium text-foreground">Gắn nhãn người nói</p>
                   <p className="text-xs text-muted-foreground mt-0.5">Phân biệt và đánh dấu từng người trong đoạn ghi âm</p>
@@ -364,7 +378,7 @@ function UploadPage() {
           {/* done */}
           {uploadStatus === "done" && (
             <div className="flex flex-col gap-5">
-              <div className="flex items-center gap-2 text-sm">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
                 <Check className="h-4 w-4 text-primary" />
                 <span className="text-primary font-medium">Chuyển đổi thành công</span>
                 {duration && <span className="text-muted-foreground">· {Math.round(duration)}s âm thanh</span>}
@@ -408,7 +422,7 @@ function UploadPage() {
                 />
               )}
 
-              <div className="flex gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row">
                 <button onClick={() => void handleCopy()}
                   className="flex-1 flex items-center justify-center gap-2 rounded-full border border-border py-3 text-sm font-medium hover:bg-primary/10 hover:border-primary/40 hover:text-primary transition">
                   {copied ? <Check className="h-4 w-4 text-primary" /> : <Copy className="h-4 w-4" />}

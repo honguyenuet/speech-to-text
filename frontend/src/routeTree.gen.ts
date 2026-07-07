@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UploadRouteImport } from './routes/upload'
+import { Route as UpgradeRouteImport } from './routes/upgrade'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as RecordRouteImport } from './routes/record'
 import { Route as LoginRouteImport } from './routes/login'
@@ -20,6 +21,11 @@ import { Route as IndexRouteImport } from './routes/index'
 const UploadRoute = UploadRouteImport.update({
   id: '/upload',
   path: '/upload',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UpgradeRoute = UpgradeRouteImport.update({
+  id: '/upgrade',
+  path: '/upgrade',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RegisterRoute = RegisterRouteImport.update({
@@ -60,6 +66,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/record': typeof RecordRoute
   '/register': typeof RegisterRoute
+  '/upgrade': typeof UpgradeRoute
   '/upload': typeof UploadRoute
 }
 export interface FileRoutesByTo {
@@ -69,6 +76,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/record': typeof RecordRoute
   '/register': typeof RegisterRoute
+  '/upgrade': typeof UpgradeRoute
   '/upload': typeof UploadRoute
 }
 export interface FileRoutesById {
@@ -79,6 +87,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/record': typeof RecordRoute
   '/register': typeof RegisterRoute
+  '/upgrade': typeof UpgradeRoute
   '/upload': typeof UploadRoute
 }
 export interface FileRouteTypes {
@@ -90,6 +99,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/record'
     | '/register'
+    | '/upgrade'
     | '/upload'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -99,6 +109,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/record'
     | '/register'
+    | '/upgrade'
     | '/upload'
   id:
     | '__root__'
@@ -108,6 +119,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/record'
     | '/register'
+    | '/upgrade'
     | '/upload'
   fileRoutesById: FileRoutesById
 }
@@ -118,6 +130,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   RecordRoute: typeof RecordRoute
   RegisterRoute: typeof RegisterRoute
+  UpgradeRoute: typeof UpgradeRoute
   UploadRoute: typeof UploadRoute
 }
 
@@ -128,6 +141,13 @@ declare module '@tanstack/react-router' {
       path: '/upload'
       fullPath: '/upload'
       preLoaderRoute: typeof UploadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/upgrade': {
+      id: '/upgrade'
+      path: '/upgrade'
+      fullPath: '/upgrade'
+      preLoaderRoute: typeof UpgradeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/register': {
@@ -182,6 +202,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   RecordRoute: RecordRoute,
   RegisterRoute: RegisterRoute,
+  UpgradeRoute: UpgradeRoute,
   UploadRoute: UploadRoute,
 }
 export const routeTree = rootRouteImport

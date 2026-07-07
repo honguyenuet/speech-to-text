@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState, useRef } from "react";
-import { Mic, Upload, LogOut, Pencil, User, Zap, Languages, ArrowRight, Camera, Check, X, History, AudioLines, Clock } from "lucide-react";
+import { Mic, Upload, LogOut, Pencil, User, Zap, Languages, ArrowRight, Camera, Check, X, History, AudioLines, Clock, CreditCard } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import hachiLogo from "@/assets/hachi-logo.png";
 import {
@@ -12,6 +12,14 @@ import {
 } from "@/components/ui/dialog";
 
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3001";
+
+function formatQuotaTime(seconds: number | null) {
+  if (seconds === null) return "Không giới hạn";
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(safeSeconds / 60);
+  const rest = safeSeconds % 60;
+  return `${minutes} phút ${rest.toString().padStart(2, "0")} giây`;
+}
 
 const SPARKLES = [
   { top: "6%",  left: "18%", delay: 0,   size: "h-1.5 w-1.5" },
@@ -165,6 +173,12 @@ function DashboardPage() {
   if (!user) return null;
 
   const initials = `${user.firstName[0] ?? ""}${user.lastName[0] ?? ""}`.toUpperCase();
+  const isFreePlan = user.plan === "free";
+  const quotaTotal = user.plan === "payg"
+    ? Math.max(user.paygSecondsRemaining, user.remainingTranscriptionSeconds ?? 0, 1)
+    : (user.dailyQuotaSeconds ?? user.freeTranscriptionSeconds ?? 1800);
+  const quotaRemaining = user.remainingTranscriptionSeconds ?? 0;
+  const quotaPercent = Math.max(0, Math.min(100, (quotaRemaining / quotaTotal) * 100));
 
   return (
     <div className="relative min-h-screen bg-background text-foreground overflow-x-hidden">
@@ -181,14 +195,17 @@ function DashboardPage() {
 
       {/* ── Header ───────────────────────────────────────────────────── */}
       <header className="relative z-30 border-b border-border bg-background/70 backdrop-blur-md">
-        <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
+        <nav className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <Link to="/" className="flex items-center">
-            <img src={hachiLogo} alt="Hachi" className="h-14 w-auto object-contain" />
+            <img src={hachiLogo} alt="Hachi" className="h-11 w-auto object-contain sm:h-14" />
           </Link>
 
           <div className="hidden md:flex items-center gap-8 text-sm text-muted-foreground">
             <Link to="/upload" className="hover:text-foreground transition">Tải file lên</Link>
             <Link to="/record" className="hover:text-foreground transition">Ghi âm</Link>
+            <Link to="/upgrade" className="hover:text-foreground transition flex items-center gap-1.5">
+              <CreditCard className="h-3.5 w-3.5" />Nâng cấp
+            </Link>
             <Link to="/history" className="hover:text-foreground transition flex items-center gap-1.5">
               <History className="h-3.5 w-3.5" />Lịch sử
             </Link>
@@ -231,19 +248,62 @@ function DashboardPage() {
       </header>
 
       {/* ── Main ─────────────────────────────────────────────────────── */}
-      <main className="relative z-10 mx-auto max-w-6xl px-6 py-12">
+      <main className="relative z-10 mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-12">
 
         {/* Greeting */}
-        <div className="mb-12 text-center">
+        <div className="mb-8 text-center sm:mb-12">
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-xs font-medium text-primary mb-4">
             <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
             Sẵn sàng chuyển đổi
           </div>
-          <h1 className="text-4xl font-bold text-foreground md:text-5xl">
+          <h1 className="text-3xl font-bold text-foreground sm:text-4xl md:text-5xl">
             Xin chào,{" "}
-            <span className="font-display text-primary text-5xl md:text-6xl">{user.firstName}!</span>
+            <span className="font-display text-primary text-4xl sm:text-5xl md:text-6xl">{user.firstName}!</span>
           </h1>
-          <p className="mt-3 text-muted-foreground text-lg">Hôm nay bạn muốn chuyển đổi gì?</p>
+          <p className="mt-3 text-base text-muted-foreground sm:text-lg">Hôm nay bạn muốn chuyển đổi gì?</p>
+        </div>
+
+        {/* Quota */}
+        <div className="mb-8 overflow-hidden rounded-2xl border border-border bg-card p-5 sm:rounded-3xl sm:p-6">
+          <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-primary/20 bg-primary/15">
+                <Clock className="h-6 w-6 text-primary" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-lg font-bold text-foreground">Thời gian chuyển đổi còn lại</h2>
+                  <span className="rounded-full border border-primary/25 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+                    {isFreePlan ? "Free" : user.plan.toUpperCase()}
+                  </span>
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {isFreePlan
+                    ? "Tài khoản mới có 30 phút chuyển đổi miễn phí."
+                    : user.plan === "payg"
+                      ? "Pay As You Go dùng theo số giờ đã mua, phù hợp các dự án thỉnh thoảng."
+                      : "Hạn mức chuyển đổi được làm mới mỗi ngày theo gói của bạn."}
+                </p>
+              </div>
+            </div>
+
+            <div className="w-full md:max-w-sm">
+              <div className="mb-2 flex items-end justify-between gap-3">
+                <span className="text-2xl font-bold text-foreground">{formatQuotaTime(quotaRemaining)}</span>
+                <span className="text-xs text-muted-foreground">{Math.round(quotaPercent)}%</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-secondary">
+                <div className="h-full rounded-full bg-gradient-primary transition-all" style={{ width: `${quotaPercent}%` }} />
+              </div>
+              <Link
+                to="/upgrade"
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-gradient-primary py-3 text-sm font-semibold text-primary-foreground shadow-glow transition hover:opacity-90"
+              >
+                <CreditCard className="h-4 w-4" />
+                {quotaRemaining <= 0 ? "Mua gói để dùng tiếp" : "Nâng cấp tài khoản"}
+              </Link>
+            </div>
+          </div>
         </div>
 
         {/* ── 2 Feature Cards ─────────────────────────────────────────── */}
@@ -251,60 +311,60 @@ function DashboardPage() {
 
           {/* Card: Upload */}
           <Link to="/upload"
-            className="group relative overflow-hidden rounded-3xl border border-border bg-card p-8 transition-all duration-300 hover:border-primary/60 hover:shadow-glow hover:-translate-y-1 block"
+            className="group relative block overflow-hidden rounded-2xl border border-border bg-card p-5 transition-all duration-300 hover:border-primary/60 hover:shadow-glow sm:rounded-3xl sm:p-8 sm:hover:-translate-y-1"
           >
             <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent pointer-events-none" />
             <div className="absolute -top-16 -right-16 h-48 w-48 rounded-full bg-primary/10 blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
 
-            <div className="relative flex items-center gap-5">
-              <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-primary/15 border border-primary/20">
-                <Upload className="h-9 w-9 text-primary animate-float" />
+            <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-5">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-primary/20 bg-primary/15 sm:h-20 sm:w-20">
+                <Upload className="h-7 w-7 animate-float text-primary sm:h-9 sm:w-9" />
               </div>
               <div className="flex-1 min-w-0">
-                <h2 className="text-2xl font-bold text-foreground mb-1">Tải file âm thanh</h2>
+                <h2 className="mb-1 text-xl font-bold text-foreground sm:text-2xl">Tải file âm thanh</h2>
                 <p className="text-muted-foreground text-sm leading-relaxed">
                   Upload file MP3, WAV, M4A… Hachi chuyển thành văn bản chính xác trong vài giây.
                 </p>
-                <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
+                <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground sm:gap-4">
                   <span className="flex items-center gap-1"><Zap className="h-3 w-3 text-primary" />~3 giây</span>
                   <span className="flex items-center gap-1"><Languages className="h-3 w-3 text-primary" />50+ ngôn ngữ</span>
                 </div>
               </div>
-              <ArrowRight className="h-6 w-6 text-muted-foreground shrink-0 transition group-hover:translate-x-1 group-hover:text-primary" />
+              <ArrowRight className="hidden h-6 w-6 shrink-0 text-muted-foreground transition group-hover:translate-x-1 group-hover:text-primary sm:block" />
             </div>
           </Link>
 
           {/* Card: Record */}
           <Link to="/record"
-            className="group relative overflow-hidden rounded-3xl border border-border bg-card p-8 transition-all duration-300 hover:border-primary/60 hover:shadow-glow hover:-translate-y-1 block"
+            className="group relative block overflow-hidden rounded-2xl border border-border bg-card p-5 transition-all duration-300 hover:border-primary/60 hover:shadow-glow sm:rounded-3xl sm:p-8 sm:hover:-translate-y-1"
           >
             <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent pointer-events-none" />
             <div className="absolute -top-16 -left-16 h-48 w-48 rounded-full bg-primary/10 blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
 
-            <div className="relative flex items-center gap-5">
-              <div className="relative flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-primary/15 border border-primary/20">
+            <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-5">
+              <div className="relative flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-primary/20 bg-primary/15 sm:h-20 sm:w-20">
                 <span className="absolute inset-0 rounded-full border border-primary/30 animate-pulse-ring" />
                 <span className="absolute inset-0 rounded-full border border-primary/20 animate-pulse-ring" style={{ animationDelay: "0.8s" }} />
-                <Mic className="relative h-9 w-9 text-primary" />
+                <Mic className="relative h-7 w-7 text-primary sm:h-9 sm:w-9" />
               </div>
               <div className="flex-1 min-w-0">
-                <h2 className="text-2xl font-bold text-foreground mb-1">Ghi âm giọng nói</h2>
+                <h2 className="mb-1 text-xl font-bold text-foreground sm:text-2xl">Ghi âm giọng nói</h2>
                 <p className="text-muted-foreground text-sm leading-relaxed">
                   Nói trực tiếp vào micro, Hachi chuyển đổi theo thời gian thực — không cần tải file.
                 </p>
-                <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
+                <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground sm:gap-4">
                   <span className="flex items-center gap-1"><Zap className="h-3 w-3 text-primary" />Thời gian thực</span>
                   <span className="flex items-center gap-1"><Languages className="h-3 w-3 text-primary" />50+ ngôn ngữ</span>
                 </div>
               </div>
-              <ArrowRight className="h-6 w-6 text-muted-foreground shrink-0 transition group-hover:translate-x-1 group-hover:text-primary" />
+              <ArrowRight className="hidden h-6 w-6 shrink-0 text-muted-foreground transition group-hover:translate-x-1 group-hover:text-primary sm:block" />
             </div>
           </Link>
         </div>
 
         {/* History preview */}
         <div className="mt-10">
-          <div className="flex items-center justify-between mb-4">
+          <div className="mb-4 flex items-center justify-between gap-3">
             <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
               <History className="h-5 w-5 text-primary" /> Lịch sử gần đây
             </h2>
@@ -347,7 +407,7 @@ function DashboardPage() {
         </div>
 
         {/* Stats */}
-        <div className="mt-10 flex flex-wrap justify-center gap-8 text-sm text-muted-foreground border-t border-border pt-8">
+        <div className="mt-10 grid grid-cols-2 gap-4 border-t border-border pt-8 text-sm text-muted-foreground sm:flex sm:flex-wrap sm:justify-center sm:gap-8">
           {[
             { value: "50+",  label: "Ngôn ngữ hỗ trợ" },
             { value: "~3s",  label: "Tốc độ xử lý"    },
@@ -408,7 +468,7 @@ function DashboardPage() {
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Tên</label>
                 <input value={editForm.firstName}
@@ -432,7 +492,7 @@ function DashboardPage() {
               <p className="text-xs text-muted-foreground/60">Email liên kết với tài khoản, không thể thay đổi</p>
             </div>
 
-            <div className="flex gap-3 pt-1">
+            <div className="flex flex-col gap-3 pt-1 sm:flex-row">
               <button onClick={closeEdit} disabled={isSavingProfile}
                 className="flex-1 rounded-full border border-border py-2.5 text-sm font-medium text-foreground hover:bg-card transition disabled:opacity-50">
                 Hủy

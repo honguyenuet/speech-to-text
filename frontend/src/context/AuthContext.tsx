@@ -8,6 +8,16 @@ interface User {
   lastName: string;
   email: string;
   avatar: string | null;
+  plan: 'free' | 'payg' | 'plus' | 'pro' | 'pre';
+  billingCycle: 'monthly' | 'yearly' | null;
+  freeTranscriptionSeconds: number;
+  usedTranscriptionSeconds: number;
+  paygSecondsRemaining: number;
+  dailyTranscriptionSeconds: number;
+  dailyQuotaSeconds: number | null;
+  usageAlertRequired: boolean;
+  usageAlertDailySeconds: number;
+  remainingTranscriptionSeconds: number | null;
 }
 
 interface AuthContextType {

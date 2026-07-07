@@ -301,26 +301,26 @@ function HistoryPage() {
 
       {/* Header */}
       <header className="relative z-20 border-b border-border bg-background/70 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <Link to="/dashboard" search={{ token: undefined }} className="flex items-center">
-            <img src={hachiLogo} alt="Hachi" className="h-14 w-auto object-contain" />
+            <img src={hachiLogo} alt="Hachi" className="h-11 w-auto object-contain sm:h-14" />
           </Link>
           <Link to="/dashboard" search={{ token: undefined }}
-            className="text-sm text-muted-foreground hover:text-foreground transition">
+            className="whitespace-nowrap text-xs text-muted-foreground transition hover:text-foreground sm:text-sm">
             ← Quay về trang chủ
           </Link>
         </div>
       </header>
 
-      <main className="relative z-10 mx-auto max-w-5xl px-6 py-10">
+      <main className="relative z-10 mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
 
         {/* Heading */}
-        <div className="mb-8">
+        <div className="mb-6 sm:mb-8">
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-xs font-medium text-primary mb-4">
             <History className="h-3 w-3" /> Lịch sử chuyển đổi
           </div>
-          <h1 className="text-4xl font-bold text-foreground">
-            Lịch sử <span className="font-display text-primary text-5xl">của bạn</span>
+          <h1 className="text-3xl font-bold text-foreground sm:text-4xl">
+            Lịch sử <span className="font-display text-primary text-4xl sm:text-5xl">của bạn</span>
           </h1>
           <p className="mt-2 text-muted-foreground">Tất cả bản chuyển đổi gần đây — nhấn để xem, chỉnh sửa hoặc nghe lại.</p>
 
@@ -367,7 +367,7 @@ function HistoryPage() {
               {search ? `Không có bản ghi nào khớp với "${search}"` : "Hãy thử tải file hoặc ghi âm để bắt đầu!"}
             </p>
             {!search && (
-              <div className="flex gap-3 mt-2">
+              <div className="mt-2 flex flex-col gap-3 sm:flex-row">
                 <Link to="/upload"
                   className="rounded-full border border-primary/40 bg-primary/10 px-5 py-2 text-sm font-medium text-primary hover:bg-primary/20 transition">
                   Tải file lên
@@ -393,10 +393,10 @@ function HistoryPage() {
                   <div className="absolute inset-0 bg-gradient-to-br from-primary/3 via-transparent to-transparent pointer-events-none" />
 
                   {/* Row header */}
-                  <div className="relative flex items-center gap-3 px-5 py-4">
+                  <div className="relative flex items-start gap-3 px-4 py-4 sm:items-center sm:px-5">
                     <button
                       onClick={() => setExpanded(isOpen ? null : item.id)}
-                      className="flex flex-1 items-center gap-4 text-left min-w-0"
+                      className="flex min-w-0 flex-1 items-start gap-3 text-left sm:items-center sm:gap-4"
                     >
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/15 border border-primary/20">
                         {isRecording(item.filename)
@@ -405,7 +405,7 @@ function HistoryPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="truncate font-medium text-foreground text-sm">{item.filename}</p>
-                        <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                           <span className="flex items-center gap-1">
                             <Clock className="h-3 w-3" />{formatDate(item.created_at)}
                           </span>
@@ -446,7 +446,7 @@ function HistoryPage() {
 
                   {/* Expanded content */}
                   {isOpen && (
-                    <div className="px-5 pb-5 flex flex-col gap-3 border-t border-border/50 pt-4">
+                    <div className="flex flex-col gap-3 border-t border-border/50 px-4 pb-4 pt-4 sm:px-5 sm:pb-5">
 
                       {/* Audio player — auto-loaded from server */}
                       {item.audio_filename && (
@@ -476,7 +476,7 @@ function HistoryPage() {
                       )}
 
                       {/* ContentEditable text — always editable inline */}
-                      <div className="rounded-2xl border border-border bg-background/60 px-5 py-4">
+                      <div className="rounded-2xl border border-border bg-background/60 px-4 py-4 sm:px-5">
                         <p className="text-xs text-muted-foreground mb-2">
                           Văn bản — có thể chỉnh sửa trực tiếp
                         </p>
@@ -494,15 +494,15 @@ function HistoryPage() {
                       </div>
 
                       {/* Action buttons */}
-                      <div className="flex flex-wrap gap-2 pt-1">
+                      <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:flex-wrap">
                         {localChanged && (
                           <>
                             <button onClick={resetEdit}
-                              className="flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-xs font-medium hover:bg-card transition">
+                              className="flex items-center justify-center gap-1.5 rounded-full border border-border px-4 py-2 text-xs font-medium transition hover:bg-card">
                               <X className="h-3 w-3" /> Hủy
                             </button>
                             <button onClick={() => void handleSaveEdit(item.id)} disabled={isSaving}
-                              className="flex items-center gap-1.5 rounded-full bg-gradient-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-glow hover:opacity-90 transition disabled:opacity-60">
+                              className="flex items-center justify-center gap-1.5 rounded-full bg-gradient-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-glow transition hover:opacity-90 disabled:opacity-60">
                               {isSaving
                                 ? <span className="h-3 w-3 rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground animate-spin" />
                                 : <Check className="h-3 w-3" />}
@@ -511,13 +511,13 @@ function HistoryPage() {
                           </>
                         )}
                         <button onClick={() => void handleCopy(item)}
-                          className="flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-xs font-medium hover:bg-primary/10 hover:border-primary/40 hover:text-primary transition">
+                          className="flex items-center justify-center gap-1.5 rounded-full border border-border px-4 py-2 text-xs font-medium transition hover:border-primary/40 hover:bg-primary/10 hover:text-primary">
                           {copied === item.id
                             ? <><Check className="h-3 w-3 text-primary" />Đã sao chép</>
                             : <><Copy className="h-3 w-3" />Sao chép</>}
                         </button>
                         <button onClick={() => void handleDownload(item)}
-                          className="flex items-center gap-1.5 rounded-full bg-gradient-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-glow hover:opacity-90 transition">
+                          className="flex items-center justify-center gap-1.5 rounded-full bg-gradient-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-glow transition hover:opacity-90">
                           <Download className="h-3 w-3" /> Tải .docx
                         </button>
                       </div>

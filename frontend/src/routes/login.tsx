@@ -50,7 +50,7 @@ function LoginPage() {
   };
 
   return (
-    <div className="relative min-h-screen bg-background overflow-hidden flex flex-col items-center justify-center px-4 py-12">
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-background px-4 py-8 sm:py-12">
 
       {/* ── Nền gradient giống hero ─────────────────────────────────── */}
       <div className="absolute inset-0 bg-gradient-hero pointer-events-none" />
@@ -79,7 +79,7 @@ function LoginPage() {
       <div className="relative z-10 flex w-full max-w-sm flex-col items-center">
 
         {/* Logo + vòng pulse */}
-        <div className="relative flex h-44 w-44 items-center justify-center mb-6">
+        <div className="relative mb-5 flex h-36 w-36 items-center justify-center sm:mb-6 sm:h-44 sm:w-44">
           {/* 3 vòng sóng giống landing page */}
           <span className="absolute inset-0 rounded-full border border-primary/40 animate-pulse-ring" />
           <span
@@ -91,23 +91,23 @@ function LoginPage() {
             style={{ animationDelay: "1.6s" }}
           />
           {/* Vòng tròn nền vàng mờ */}
-          <div className="absolute inset-6 rounded-full bg-primary/10" />
+          <div className="absolute inset-5 rounded-full bg-primary/10 sm:inset-6" />
           <img
             src={hachiLogo}
             alt="Hachi"
-            className="relative h-32 w-auto object-contain animate-float drop-shadow-[0_6px_24px_rgba(250,200,60,0.5)]"
+            className="relative h-24 w-auto animate-float object-contain drop-shadow-[0_6px_24px_rgba(250,200,60,0.5)] sm:h-32"
           />
         </div>
 
         {/* Tiêu đề chào mừng */}
-        <div className="text-center mb-8">
+        <div className="mb-6 text-center sm:mb-8">
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-xs font-medium text-primary mb-4">
             <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
             Chào mừng quay trở lại
           </div>
-          <h1 className="text-4xl font-bold text-foreground leading-tight">
+          <h1 className="text-3xl font-bold leading-tight text-foreground sm:text-4xl">
             Xin chào,{" "}
-            <span className="font-display text-primary text-5xl">tôi là Hachi!</span>
+            <span className="font-display text-primary text-4xl sm:text-5xl">tôi là Hachi!</span>
           </h1>
           <p className="mt-3 text-sm text-muted-foreground max-w-xs mx-auto">
             Đăng nhập để tiếp tục chuyển giọng nói thành văn bản nhanh và chính xác.
@@ -115,7 +115,7 @@ function LoginPage() {
         </div>
 
         {/* Card đăng nhập */}
-        <div className="w-full rounded-2xl border border-border bg-card/80 backdrop-blur-sm p-6 shadow-soft">
+        <div className="w-full rounded-2xl border border-border bg-card/80 p-5 shadow-soft backdrop-blur-sm sm:p-6">
 
           {/* Thông báo lỗi */}
           {error && errorMessages[error] && (
@@ -169,7 +169,7 @@ function LoginPage() {
         </div>
 
         {/* Thanh thống kê */}
-        <div className="mt-6 flex items-center gap-5 text-xs text-muted-foreground">
+        <div className="mt-6 flex w-full items-center justify-between gap-3 text-center text-xs text-muted-foreground sm:w-auto sm:justify-center sm:gap-5">
           <div className="text-center">
             <div className="text-lg font-bold text-foreground">50+</div>
             <div>Ngôn ngữ</div>
