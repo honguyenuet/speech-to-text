@@ -8,6 +8,8 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import hachiLogo from "@/assets/hachi-logo.png";
 import { Document, Packer, Paragraph, TextRun } from "docx";
+import { TranscriptSegments, type TranscriptSegment } from "@/components/TranscriptSegments";
+import { downloadSrt } from "@/lib/srt";
 
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3001";
 
@@ -16,7 +18,6 @@ interface Word {
   start: number;
   end: number;
 }
-
 interface HistoryItem {
   id: number;
   filename: string;
@@ -24,6 +25,8 @@ interface HistoryItem {
   duration: number | null;
   text: string;
   words: Word[] | null;
+  segments: TranscriptSegment[] | null;
+  speaker_names: Record<string, string> | null;
   audio_filename: string | null;
   created_at: string;
 }
@@ -40,6 +43,16 @@ function formatBytes(bytes: number) {
 function formatDate(iso: string) {
   const d = new Date(iso);
   return d.toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function formatTimestamp(milliseconds: number) {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return hours > 0
+    ? `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`
+    : `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 }
 
 function isRecording(filename: string) {
@@ -135,6 +148,7 @@ function HistoryPage() {
         span.className =
           "cursor-pointer rounded px-0.5 transition-colors duration-100 hover:bg-primary/15";
         span.textContent = w.text;
+        span.title = `${formatTimestamp(w.start)} – ${formatTimestamp(w.end)}`;
         span.onclick = () => {
           if (audioRef.current) {
             audioRef.current.currentTime = w.start / 1000;
@@ -201,6 +215,7 @@ function HistoryPage() {
         span.className =
           "cursor-pointer rounded px-0.5 transition-colors duration-100 hover:bg-primary/15";
         span.textContent = w.text;
+        span.title = `${formatTimestamp(w.start)} – ${formatTimestamp(w.end)}`;
         span.onclick = () => {
           if (audioRef.current) {
             audioRef.current.currentTime = w.start / 1000;
@@ -242,6 +257,22 @@ function HistoryPage() {
     await navigator.clipboard.writeText(text);
     setCopied(item.id);
     setTimeout(() => setCopied(null), 2000);
+  }
+
+  async function handleRenameSpeaker(item: HistoryItem, speaker: string, name: string) {
+    const res = await fetch(`${API_URL}/api/transcribe/${item.id}/speakers`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ speaker, name }),
+    });
+    const data = (await res.json()) as { error?: string; speakerNames?: Record<string, string>; segments?: TranscriptSegment[]; text?: string };
+    if (!res.ok) return;
+    setItems((current) => current.map((entry) => entry.id === item.id ? {
+      ...entry,
+      speaker_names: data.speakerNames ?? entry.speaker_names,
+      segments: data.segments ?? entry.segments,
+      text: data.text ?? entry.text,
+    } : entry));
   }
 
   async function handleDelete(id: number) {
@@ -475,6 +506,10 @@ function HistoryPage() {
                         </div>
                       )}
 
+                      <TranscriptSegments segments={item.segments ?? []} audioRef={audioRef}
+                        speakerNames={item.speaker_names ?? {}}
+                        onRenameSpeaker={(speaker, name) => handleRenameSpeaker(item, speaker, name)} />
+
                       {/* ContentEditable text — always editable inline */}
                       <div className="rounded-2xl border border-border bg-background/60 px-4 py-4 sm:px-5">
                         <p className="text-xs text-muted-foreground mb-2">
@@ -519,6 +554,11 @@ function HistoryPage() {
                         <button onClick={() => void handleDownload(item)}
                           className="flex items-center justify-center gap-1.5 rounded-full bg-gradient-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-glow transition hover:opacity-90">
                           <Download className="h-3 w-3" /> Tải .docx
+                        </button>
+                        <button onClick={() => downloadSrt(item.filename, item.segments ?? [], item.words ?? [], item.speaker_names ?? {})}
+                          disabled={(!item.segments || item.segments.length === 0) && (!item.words || item.words.length === 0)}
+                          className="flex items-center justify-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-4 py-2 text-xs font-semibold text-primary transition hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-40">
+                          <Download className="h-3 w-3" /> Tải .srt
                         </button>
                       </div>
                     </div>

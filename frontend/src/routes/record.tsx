@@ -4,6 +4,8 @@ import { Mic, Square, Zap, Languages, Copy, Check, Download, RotateCcw, X, Pause
 import { Document, Packer, Paragraph, TextRun } from "docx";
 import { useAuth } from "@/context/AuthContext";
 import hachiLogo from "@/assets/hachi-logo.png";
+import { TranscriptSegments, type TranscriptSegment } from "@/components/TranscriptSegments";
+import { downloadSrt } from "@/lib/srt";
 
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3001";
 const MAX_RECORD_SECONDS = 30 * 60; // 30 phút
@@ -31,6 +33,15 @@ interface Word {
   text: string;
   start: number; // milliseconds
   end: number;   // milliseconds
+}
+function formatTimestamp(milliseconds: number) {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return hours > 0
+    ? `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`
+    : `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 }
 
 interface TranscriptionQuota {
@@ -74,6 +85,9 @@ function RecordPage() {
   const [language, setLanguage]           = useState("auto");
   const [recordNotice, setRecordNotice]   = useState("");
   const [words, setWords]                 = useState<Word[]>([]);
+  const [segments, setSegments]           = useState<TranscriptSegment[]>([]);
+  const [transcriptionId, setTranscriptionId] = useState<number | null>(null);
+  const [speakerNames, setSpeakerNames]   = useState<Record<string, string>>({});
 
   const mediaRecorderRef  = useRef<MediaRecorder | null>(null);
   const chunksRef         = useRef<Blob[]>([]);
@@ -105,6 +119,7 @@ function RecordPage() {
       const span = document.createElement("span");
       span.className = "cursor-pointer rounded px-0.5 transition-colors duration-100 hover:bg-primary/15";
       span.textContent = w.text;
+      span.title = `${formatTimestamp(w.start)} – ${formatTimestamp(w.end)}`;
       span.onclick = () => {
         if (audioRef.current) {
           audioRef.current.currentTime = w.start / 1000;
@@ -259,13 +274,33 @@ function RecordPage() {
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
-      const data = (await res.json()) as { text?: string; duration?: number; error?: string; words?: Word[]; quota?: TranscriptionQuota };
+      const data = (await res.json()) as { jobId?: string; error?: string };
       if (!res.ok) { setError(data.error ?? "Chuyển đổi thất bại"); setStatus("error"); return; }
-      setTranscription(data.text ?? "");
-      setDuration(data.duration ?? null);
-      setWords(data.words ?? []);
-      if (data.quota) updateUser(data.quota);
-      setStatus("done");
+      if (!data.jobId) throw new Error("Server không trả về mã job");
+      while (true) {
+        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+        const jobRes = await fetch(`${API_URL}/api/transcribe/jobs/${data.jobId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const job = (await jobRes.json()) as {
+          status?: string; error?: string; quota?: TranscriptionQuota;
+          result?: { id: number; text: string; duration: number; words: Word[]; segments: TranscriptSegment[]; speaker_names?: Record<string, string> };
+        };
+        if (!jobRes.ok || job.status === "failed") {
+          setError(job.error ?? "Chuyển đổi thất bại"); setStatus("error"); return;
+        }
+        if (job.status === "completed" && job.result) {
+          setTranscription(job.result.text ?? "");
+          setDuration(job.result.duration ?? null);
+          setWords(job.result.words ?? []);
+          setSegments(job.result.segments ?? []);
+          setTranscriptionId(job.result.id);
+          setSpeakerNames(job.result.speaker_names ?? {});
+          if (job.quota) updateUser(job.quota);
+          setStatus("done");
+          return;
+        }
+      }
     } catch {
       setError("Không thể kết nối đến server"); setStatus("error");
     }
@@ -275,6 +310,20 @@ function RecordPage() {
     const text = editRef.current?.textContent ?? transcription;
     await navigator.clipboard.writeText(text);
     setCopied(true); setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function handleRenameSpeaker(speaker: string, name: string) {
+    if (!transcriptionId) return;
+    const res = await fetch(`${API_URL}/api/transcribe/${transcriptionId}/speakers`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ speaker, name }),
+    });
+    const data = (await res.json()) as { error?: string; speakerNames?: Record<string, string>; segments?: TranscriptSegment[]; text?: string };
+    if (!res.ok) { setError(data.error ?? "Không thể đổi tên người nói"); return; }
+    setSpeakerNames(data.speakerNames ?? {});
+    if (data.segments) setSegments(data.segments);
+    if (data.text) setTranscription(data.text);
   }
 
   async function handleDownload() {
@@ -306,6 +355,9 @@ function RecordPage() {
     recordTimeRef.current = 0;
     setAudioUrl(null);
     setWords([]);
+    setSegments([]);
+    setTranscriptionId(null);
+    setSpeakerNames({});
     if (editRef.current) editRef.current.innerHTML = "";
     spanRefs.current = [];
     activeIdxRef.current = -1;
@@ -568,6 +620,7 @@ function RecordPage() {
               )}
 
               {/* contentEditable — highlight + edit in one view */}
+              <TranscriptSegments segments={segments} audioRef={audioRef} speakerNames={speakerNames} onRenameSpeaker={handleRenameSpeaker} />
               {words.length > 0 ? (
                 <div className="rounded-2xl border border-border bg-background/60 px-5 py-4">
                   <p className="text-xs text-muted-foreground mb-2">Văn bản — có thể chỉnh sửa trực tiếp</p>
@@ -605,6 +658,11 @@ function RecordPage() {
                   className="flex-1 flex items-center justify-center gap-2 rounded-full bg-gradient-primary py-3 text-sm font-semibold text-primary-foreground shadow-glow hover:opacity-90 transition">
                   <Download className="h-4 w-4" />
                   Tải .docx
+                </button>
+                <button onClick={() => downloadSrt("recording", segments, words, speakerNames)}
+                  disabled={segments.length === 0 && words.length === 0}
+                  className="flex-1 flex items-center justify-center gap-2 rounded-full border border-primary/40 bg-primary/10 py-3 text-sm font-semibold text-primary transition hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-40">
+                  <Download className="h-4 w-4" /> Tải .srt
                 </button>
               </div>
             </div>

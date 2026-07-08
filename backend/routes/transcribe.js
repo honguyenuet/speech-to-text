@@ -32,6 +32,7 @@ const SUPPORTED_LANGUAGES = new Set([
   'nl', 'hi', 'ja', 'zh', 'fi', 'ko', 'pl', 'ru', 'tr', 'uk',
 ]);
 let ensureUserQuotaColumnsPromise = null;
+let ensureTranscriptionJobsPromise = null;
 
 // Thư mục lưu file audio
 const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
@@ -90,6 +91,65 @@ function ensureUserQuotaColumns() {
     });
   }
   return ensureUserQuotaColumnsPromise;
+}
+
+function ensureTranscriptionJobsTable() {
+  if (!ensureTranscriptionJobsPromise) {
+    ensureTranscriptionJobsPromise = pool.query(`
+      CREATE TABLE IF NOT EXISTS transcription_jobs (
+        id UUID PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        assemblyai_id VARCHAR(255) NOT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'queued',
+        filename VARCHAR(500) NOT NULL,
+        file_size INTEGER NOT NULL,
+        audio_filename VARCHAR(255) NOT NULL,
+        speaker_labels BOOLEAN NOT NULL DEFAULT FALSE,
+        error TEXT,
+        transcription_id INTEGER,
+        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+      );
+      ALTER TABLE transcriptions ADD COLUMN IF NOT EXISTS segments JSONB DEFAULT '[]';
+      ALTER TABLE transcriptions ADD COLUMN IF NOT EXISTS speaker_names JSONB DEFAULT '{}';
+      CREATE INDEX IF NOT EXISTS transcription_jobs_user_id_idx ON transcription_jobs(user_id);
+    `).catch((error) => {
+      ensureTranscriptionJobsPromise = null;
+      throw error;
+    });
+  }
+  return ensureTranscriptionJobsPromise;
+}
+
+function serializeSegments(transcript) {
+  if (Array.isArray(transcript?.utterances) && transcript.utterances.length > 0) {
+    return transcript.utterances.map((item) => ({
+      speaker: item.speaker ?? null,
+      text: item.text ?? '',
+      start: Number(item.start ?? 0),
+      end: Number(item.end ?? 0),
+      words: Array.isArray(item.words) ? item.words : [],
+    }));
+  }
+  if (!Array.isArray(transcript?.words) || transcript.words.length === 0) return [];
+  const segments = [];
+  let currentWords = [];
+  for (const word of transcript.words) {
+    currentWords.push(word);
+    const endsSentence = /[.!?…]$/.test(word.text ?? '');
+    if (endsSentence || currentWords.length >= 40) {
+      segments.push(currentWords);
+      currentWords = [];
+    }
+  }
+  if (currentWords.length > 0) segments.push(currentWords);
+  return segments.map((words) => ({
+    speaker: null,
+    text: words.map((word) => word.text).join(' '),
+    start: Number(words[0]?.start ?? 0),
+    end: Number(words[words.length - 1]?.end ?? 0),
+    words,
+  }));
 }
 
 function buildQuota(user) {
@@ -294,7 +354,7 @@ router.post('/', authMiddleware, (req, res, next) => {
       return res.status(503).json({ error: 'Chưa cấu hình ASSEMBLYAI_API_KEY trong backend/.env' });
     }
 
-    await ensureUserQuotaColumns();
+    await Promise.all([ensureUserQuotaColumns(), ensureTranscriptionJobsTable()]);
     const quotaBefore = await getUserQuota(req.user.id);
     if (!quotaBefore) {
       return res.status(404).json({ error: 'Không tìm thấy người dùng' });
@@ -334,32 +394,6 @@ router.post('/', authMiddleware, (req, res, next) => {
     if (language === 'auto') transcriptOptions.language_detection = true;
     else transcriptOptions.language_code = language;
 
-    const transcript = await client.transcripts.transcribe(transcriptOptions);
-
-    if (transcript.status === 'error') {
-      return res.status(500).json({ error: transcript.error ?? 'AssemblyAI trả về lỗi' });
-    }
-
-    let text;
-    if (speakerLabels && transcript.utterances?.length > 0) {
-      text = transcript.utterances
-        .map((u) => `Người nói ${u.speaker}: ${u.text}`)
-        .join('\n\n');
-    } else {
-      text = transcript.text ?? '';
-    }
-    const duration = getTranscriptDurationSeconds(transcript);
-    const billableSeconds = getBillableTranscriptionSeconds(duration);
-    if (
-      quotaBefore.remainingTranscriptionSeconds !== null &&
-      billableSeconds > quotaBefore.remainingTranscriptionSeconds
-    ) {
-      return res.status(402).json({
-        error: getOverLimitMessage(quotaBefore),
-        quota: quotaBefore,
-      });
-    }
-
     // multer đọc tên file dưới dạng latin1, cần re-encode sang utf-8
     const filename = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
 
@@ -367,18 +401,17 @@ router.post('/', authMiddleware, (req, res, next) => {
     const ext = (req.file.originalname.match(/\.([^.]+)$/) || ['', 'audio'])[1].toLowerCase();
     savedAudioFilename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
     fs.writeFileSync(path.join(UPLOADS_DIR, savedAudioFilename), req.file.buffer);
-
-    // Lưu lịch sử vào DB
+    const transcript = await client.transcripts.submit(transcriptOptions);
+    const jobId = crypto.randomUUID();
     await pool.query(
-      `INSERT INTO transcriptions (user_id, filename, file_size, duration, text, words, audio_filename)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [req.user.id, filename, req.file.size, duration, text,
-       JSON.stringify(transcript.words ?? []), savedAudioFilename]
+      `INSERT INTO transcription_jobs
+       (id, user_id, assemblyai_id, status, filename, file_size, audio_filename, speaker_labels)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [jobId, req.user.id, transcript.id, transcript.status ?? 'queued', filename,
+       req.file.size, savedAudioFilename, speakerLabels]
     );
-
-    const quota = await consumeTranscriptionSeconds(req.user.id, billableSeconds);
-
-    return res.json({ text, duration, filename: req.file.originalname, words: transcript.words ?? [], quota });
+    savedAudioFilename = null;
+    return res.status(202).json({ jobId, status: transcript.status ?? 'queued' });
   } catch (err) {
     // Dọn file nếu lưu DB thất bại
     if (savedAudioFilename) {
@@ -390,11 +423,116 @@ router.post('/', authMiddleware, (req, res, next) => {
   }
 });
 
+// GET /api/transcribe/jobs — danh sách hàng đợi của người dùng
+router.get('/jobs', authMiddleware, async (req, res) => {
+  try {
+    await ensureTranscriptionJobsTable();
+    const { rows } = await pool.query(
+      `SELECT id, assemblyai_id, status, filename, file_size, error, transcription_id,
+              created_at, updated_at
+       FROM transcription_jobs
+       WHERE user_id = $1
+       ORDER BY created_at DESC
+       LIMIT 50`,
+      [req.user.id]
+    );
+    const activeQueue = rows
+      .filter((job) => job.status === 'queued' || job.status === 'processing')
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    const positions = new Map(activeQueue.map((job, index) => [job.id, index + 1]));
+    return res.json(rows.map((job) => ({
+      ...job,
+      queuePosition: positions.get(job.id) ?? null,
+    })));
+  } catch (error) {
+    console.error('List transcription jobs error:', error);
+    return res.status(500).json({ error: 'Không thể tải danh sách hàng đợi' });
+  }
+});
+
+// GET /api/transcribe/jobs/:jobId — trạng thái và kết quả của transcription job
+router.get('/jobs/:jobId', authMiddleware, async (req, res) => {
+  try {
+    await Promise.all([ensureUserQuotaColumns(), ensureTranscriptionJobsTable()]);
+    const { rows } = await pool.query(
+      'SELECT * FROM transcription_jobs WHERE id = $1 AND user_id = $2',
+      [req.params.jobId, req.user.id]
+    );
+    const job = rows[0];
+    if (!job) return res.status(404).json({ error: 'Không tìm thấy job chuyển đổi' });
+    if (job.status === 'completed' && job.transcription_id) {
+      const result = await pool.query(
+        'SELECT id, filename, duration, text, words, segments, speaker_names FROM transcriptions WHERE id = $1',
+        [job.transcription_id]
+      );
+      return res.json({ jobId: job.id, status: 'completed', result: result.rows[0] });
+    }
+    if (job.status === 'failed' || job.status === 'error') {
+      return res.json({ jobId: job.id, status: 'failed', error: job.error ?? 'Chuyển đổi thất bại' });
+    }
+
+    const client = new AssemblyAI({ apiKey: process.env.ASSEMBLYAI_API_KEY });
+    const transcript = await client.transcripts.get(job.assemblyai_id);
+    if (transcript.status === 'error') {
+      await pool.query(
+        `UPDATE transcription_jobs SET status = 'failed', error = $1, updated_at = NOW() WHERE id = $2`,
+        [transcript.error ?? 'AssemblyAI trả về lỗi', job.id]
+      );
+      return res.json({ jobId: job.id, status: 'failed', error: transcript.error });
+    }
+    if (transcript.status !== 'completed') {
+      await pool.query('UPDATE transcription_jobs SET status = $1, updated_at = NOW() WHERE id = $2', [transcript.status, job.id]);
+      return res.json({ jobId: job.id, status: transcript.status });
+    }
+
+    const duration = getTranscriptDurationSeconds(transcript);
+    const billableSeconds = getBillableTranscriptionSeconds(duration);
+    const quotaBefore = await getUserQuota(req.user.id);
+    if (quotaBefore.remainingTranscriptionSeconds !== null && billableSeconds > quotaBefore.remainingTranscriptionSeconds) {
+      const error = getOverLimitMessage(quotaBefore);
+      await pool.query(`UPDATE transcription_jobs SET status = 'failed', error = $1, updated_at = NOW() WHERE id = $2`, [error, job.id]);
+      return res.status(402).json({ jobId: job.id, status: 'failed', error, quota: quotaBefore });
+    }
+    const segments = serializeSegments(transcript);
+    const text = job.speaker_labels && segments.length > 0
+      ? segments.map((segment) => `Người nói ${segment.speaker}: ${segment.text}`).join('\n\n')
+      : transcript.text ?? '';
+    const dbClient = await pool.connect();
+    try {
+      await dbClient.query('BEGIN');
+      const inserted = await dbClient.query(
+        `INSERT INTO transcriptions (user_id, filename, file_size, duration, text, words, segments, audio_filename)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+        [req.user.id, job.filename, job.file_size, duration, text,
+         JSON.stringify(transcript.words ?? []), JSON.stringify(segments), job.audio_filename]
+      );
+      await dbClient.query(
+        `UPDATE transcription_jobs SET status = 'completed', transcription_id = $1, updated_at = NOW() WHERE id = $2`,
+        [inserted.rows[0].id, job.id]
+      );
+      await dbClient.query('COMMIT');
+      const quota = await consumeTranscriptionSeconds(req.user.id, billableSeconds);
+      return res.json({ jobId: job.id, status: 'completed', result: {
+        id: inserted.rows[0].id, filename: job.filename, duration, text,
+        words: transcript.words ?? [], segments, speaker_names: {},
+      }, quota });
+    } catch (error) {
+      await dbClient.query('ROLLBACK');
+      throw error;
+    } finally {
+      dbClient.release();
+    }
+  } catch (err) {
+    console.error('Get transcription job error:', err);
+    return res.status(500).json({ error: err?.message ?? 'Lỗi kiểm tra job chuyển đổi' });
+  }
+});
+
 // GET /api/transcribe/history — lịch sử chuyển đổi của user
 router.get('/history', authMiddleware, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, filename, file_size, duration, text, words, audio_filename, created_at
+      `SELECT id, filename, file_size, duration, text, words, segments, speaker_names, audio_filename, created_at
        FROM transcriptions WHERE user_id = $1
        ORDER BY created_at DESC LIMIT 20`,
       [req.user.id]
@@ -402,6 +540,46 @@ router.get('/history', authMiddleware, async (req, res) => {
     return res.json(rows);
   } catch {
     return res.status(500).json({ error: 'Lỗi server' });
+  }
+});
+
+// PATCH /api/transcribe/:id/speakers — đổi và lưu tên hiển thị của người nói
+router.patch('/:id/speakers', authMiddleware, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const speaker = String(req.body?.speaker ?? '').trim();
+  const name = String(req.body?.name ?? '').trim();
+  if (isNaN(id) || !/^[A-Za-z0-9_-]{1,20}$/.test(speaker) || !name || name.length > 100) {
+    return res.status(400).json({ error: 'Thông tin người nói không hợp lệ' });
+  }
+  try {
+    await ensureTranscriptionJobsTable();
+    const { rows } = await pool.query(
+      'SELECT text, segments, speaker_names FROM transcriptions WHERE id = $1 AND user_id = $2',
+      [id, req.user.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Không tìm thấy bản ghi' });
+    const originalSegments = Array.isArray(rows[0].segments) ? rows[0].segments : [];
+    if (!originalSegments.some((segment) => segment.speaker === speaker)) {
+      return res.status(400).json({ error: 'Người nói không tồn tại trong transcript' });
+    }
+    const speakerNames = { ...(rows[0].speaker_names ?? {}), [speaker]: name };
+    const segments = originalSegments.map((segment) =>
+      segment.speaker === speaker ? { ...segment, speakerName: name } : segment
+    );
+    const hasSpeakers = segments.some((segment) => segment.speaker);
+    const text = hasSpeakers
+      ? segments.map((segment) => segment.speaker
+        ? `${speakerNames[segment.speaker] || `Người nói ${segment.speaker}`}: ${segment.text}`
+        : segment.text).join('\n\n')
+      : rows[0].text;
+    await pool.query(
+      'UPDATE transcriptions SET speaker_names = $1, segments = $2, text = $3 WHERE id = $4 AND user_id = $5',
+      [JSON.stringify(speakerNames), JSON.stringify(segments), text, id, req.user.id]
+    );
+    return res.json({ speakerNames, segments, text });
+  } catch (error) {
+    console.error('Rename speaker error:', error);
+    return res.status(500).json({ error: 'Không thể đổi tên người nói' });
   }
 });
 
