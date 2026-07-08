@@ -9,6 +9,12 @@ const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://
 const MAX_MB   = 200;
 
 const FORMAT_TAGS = ["MP3", "WAV", "M4A", "OGG", "FLAC", "AAC"];
+const LANGUAGE_OPTIONS = [
+  ["auto", "Tự động nhận diện"], ["vi", "Tiếng Việt"], ["en", "Tiếng Anh"],
+  ["fr", "Tiếng Pháp"], ["de", "Tiếng Đức"], ["es", "Tiếng Tây Ban Nha"],
+  ["it", "Tiếng Ý"], ["pt", "Tiếng Bồ Đào Nha"], ["ja", "Tiếng Nhật"],
+  ["zh", "Tiếng Trung"], ["ko", "Tiếng Hàn"], ["hi", "Tiếng Hindi"],
+] as const;
 
 const SPARKLES = [
   { top: "5%",  left: "5%",  delay: 0,   size: "h-1.5 w-1.5" },
@@ -54,6 +60,7 @@ function UploadPage() {
   const [uploadError, setUploadError]     = useState("");
   const [copied, setCopied]               = useState(false);
   const [speakerLabels, setSpeakerLabels] = useState(false);
+  const [language, setLanguage]           = useState("auto");
   const [words, setWords]                 = useState<Word[]>([]);
   const [audioUrl, setAudioUrl]           = useState<string | null>(null);
 
@@ -149,6 +156,7 @@ function UploadPage() {
       const formData = new FormData();
       formData.append("audio", uploadFile);
       formData.append("speakerLabels", String(speakerLabels));
+      formData.append("language", language);
       const res  = await fetch(`${API_URL}/api/transcribe`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
@@ -322,6 +330,15 @@ function UploadPage() {
               {uploadError && (
                 <p className="rounded-xl bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">{uploadError}</p>
               )}
+              <label className="flex flex-col gap-2 rounded-2xl border border-border bg-background/50 px-4 py-3">
+                <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <Languages className="h-4 w-4 text-primary" /> Ngôn ngữ âm thanh
+                </span>
+                <select value={language} onChange={(e) => setLanguage(e.target.value)}
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/20">
+                  {LANGUAGE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+              </label>
               <label className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-border bg-background/50 px-4 py-3 transition hover:border-primary/40 hover:bg-primary/5">
                 <div>
                   <p className="text-sm font-medium text-foreground">Gắn nhãn người nói</p>

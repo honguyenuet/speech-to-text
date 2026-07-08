@@ -7,6 +7,12 @@ import hachiLogo from "@/assets/hachi-logo.png";
 
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3001";
 const MAX_RECORD_SECONDS = 30 * 60; // 30 phút
+const LANGUAGE_OPTIONS = [
+  ["auto", "Tự động nhận diện"], ["vi", "Tiếng Việt"], ["en", "Tiếng Anh"],
+  ["fr", "Tiếng Pháp"], ["de", "Tiếng Đức"], ["es", "Tiếng Tây Ban Nha"],
+  ["it", "Tiếng Ý"], ["pt", "Tiếng Bồ Đào Nha"], ["ja", "Tiếng Nhật"],
+  ["zh", "Tiếng Trung"], ["ko", "Tiếng Hàn"], ["hi", "Tiếng Hindi"],
+] as const;
 
 const SPARKLES = [
   { top: "6%",  left: "8%",  delay: 0,   size: "h-1.5 w-1.5" },
@@ -65,6 +71,7 @@ function RecordPage() {
   const [audioUrl, setAudioUrl]           = useState<string | null>(null);
   const [audioMime, setAudioMime]         = useState("audio/webm");
   const [speakerLabels, setSpeakerLabels] = useState(false);
+  const [language, setLanguage]           = useState("auto");
   const [recordNotice, setRecordNotice]   = useState("");
   const [words, setWords]                 = useState<Word[]>([]);
 
@@ -245,6 +252,7 @@ function RecordPage() {
     const formData = new FormData();
     formData.append("audio", blob, "recording.webm");
     formData.append("speakerLabels", String(speakerLabels));
+    formData.append("language", language);
     try {
       const res  = await fetch(`${API_URL}/api/transcribe`, {
         method: "POST",
@@ -471,6 +479,15 @@ function RecordPage() {
                   <audio controls src={audioUrl} className="w-full" />
                 </div>
               )}
+              <label className="flex flex-col gap-2 rounded-2xl border border-border bg-background/50 px-4 py-3">
+                <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <Languages className="h-4 w-4 text-primary" /> Ngôn ngữ âm thanh
+                </span>
+                <select value={language} onChange={(e) => setLanguage(e.target.value)}
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/20">
+                  {LANGUAGE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+              </label>
               <label className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-border bg-background/50 px-4 py-3 transition hover:border-primary/40 hover:bg-primary/5">
                 <div>
                   <p className="text-sm font-medium text-foreground">Gắn nhãn người nói</p>

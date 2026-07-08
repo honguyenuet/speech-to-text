@@ -27,6 +27,10 @@ const PLAN_DAILY_LIMITS = {
   pro: 5 * 60 * 60,
   pre: 7 * 60 * 60,
 };
+const SUPPORTED_LANGUAGES = new Set([
+  'auto', 'vi', 'en', 'en_us', 'en_uk', 'fr', 'de', 'es', 'it', 'pt',
+  'nl', 'hi', 'ja', 'zh', 'fi', 'ko', 'pl', 'ru', 'tr', 'uk',
+]);
 let ensureUserQuotaColumnsPromise = null;
 
 // Thư mục lưu file audio
@@ -318,12 +322,19 @@ router.post('/', authMiddleware, (req, res, next) => {
     const client = new AssemblyAI({ apiKey: process.env.ASSEMBLYAI_API_KEY });
 
     const speakerLabels = req.body.speakerLabels === 'true';
+    const language = typeof req.body.language === 'string' ? req.body.language : 'auto';
+    if (!SUPPORTED_LANGUAGES.has(language)) {
+      return res.status(400).json({ error: 'Ngôn ngữ không được hỗ trợ' });
+    }
 
-    const transcript = await client.transcripts.transcribe({
+    const transcriptOptions = {
       audio:              req.file.buffer,
-      language_detection: true,
       speaker_labels:     speakerLabels,
-    });
+    };
+    if (language === 'auto') transcriptOptions.language_detection = true;
+    else transcriptOptions.language_code = language;
+
+    const transcript = await client.transcripts.transcribe(transcriptOptions);
 
     if (transcript.status === 'error') {
       return res.status(500).json({ error: transcript.error ?? 'AssemblyAI trả về lỗi' });

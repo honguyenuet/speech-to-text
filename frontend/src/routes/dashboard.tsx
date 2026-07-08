@@ -174,11 +174,7 @@ function DashboardPage() {
 
   const initials = `${user.firstName[0] ?? ""}${user.lastName[0] ?? ""}`.toUpperCase();
   const isFreePlan = user.plan === "free";
-  const quotaTotal = user.plan === "payg"
-    ? Math.max(user.paygSecondsRemaining, user.remainingTranscriptionSeconds ?? 0, 1)
-    : (user.dailyQuotaSeconds ?? user.freeTranscriptionSeconds ?? 1800);
   const quotaRemaining = user.remainingTranscriptionSeconds ?? 0;
-  const quotaPercent = Math.max(0, Math.min(100, (quotaRemaining / quotaTotal) * 100));
 
   return (
     <div className="relative min-h-screen bg-background text-foreground overflow-x-hidden">
@@ -288,13 +284,7 @@ function DashboardPage() {
             </div>
 
             <div className="w-full md:max-w-sm">
-              <div className="mb-2 flex items-end justify-between gap-3">
-                <span className="text-2xl font-bold text-foreground">{formatQuotaTime(quotaRemaining)}</span>
-                <span className="text-xs text-muted-foreground">{Math.round(quotaPercent)}%</span>
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-secondary">
-                <div className="h-full rounded-full bg-gradient-primary transition-all" style={{ width: `${quotaPercent}%` }} />
-              </div>
+              <span className="text-2xl font-bold text-foreground">{formatQuotaTime(quotaRemaining)}</span>
               <Link
                 to="/upgrade"
                 className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-gradient-primary py-3 text-sm font-semibold text-primary-foreground shadow-glow transition hover:opacity-90"
